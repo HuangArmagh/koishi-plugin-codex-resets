@@ -51,6 +51,7 @@
     "@koishijs/plugin-mock": "^2.6.6",
     "@koishijs/plugin-sandbox": "3.4.2",
     "@minatojs/driver-memory": "^3.7.0",
+    "@satorijs/adapter-qq": "4.14.0",
     "@satorijs/adapter-telegram": "4.5.11",
     "@types/node": "^22.0.0",
     "js-yaml": "4.3.2",

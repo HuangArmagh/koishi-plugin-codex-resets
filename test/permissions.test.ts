@@ -104,15 +104,19 @@ describe('platform administrator authorization', () => {
   })
 })
 
-describe('official QQ explicit group authorization', () => {
+describe('official QQ native roles and fallback group authorization', () => {
   const grants: QQGroupManager[] = [{ selfId: 'bot-a', groupId: '100', userIds: ['200'] }]
-  const qqSession = () => Object.assign(session('qq'), { selfId: 'bot-a', channelId: '100' })
+  const qqSession = () => {
+    const value = Object.assign(session('qq'), { selfId: 'bot-a', channelId: '100' })
+    vi.mocked(value.bot.getGuildMember).mockResolvedValue({ roles: [] })
+    return value
+  }
 
-  it('requires opt-in and exact bot, group and member identities without calling member APIs', async () => {
+  it('falls back to exact bot, group and member grants only after checking native roles', async () => {
     const value = qqSession()
     expect(await managementAccess(value)).toBe('qqNotConfigured')
     expect(await managementAccess(value, grants)).toBe('allowed')
-    expect(value.bot.getGuildMember).not.toHaveBeenCalled()
+    expect(value.bot.getGuildMember).toHaveBeenCalledWith('100', '200')
     expect(await managementAccess(Object.assign(qqSession(), { selfId: 'bot-b' }), grants)).toBe('qqNotConfigured')
     expect(await managementAccess(Object.assign(qqSession(), { guildId: 'other', channelId: 'other' }), grants)).toBe('qqNotConfigured')
     expect(await managementAccess(Object.assign(qqSession(), { userId: 'other' }), grants)).toBe('qqNotAuthorized')
@@ -128,13 +132,74 @@ describe('official QQ explicit group authorization', () => {
 
   it('does not treat role labels or high Koishi authority as QQ grants or authorize other platforms', async () => {
     const value = qqSession()
-    value.event.member = { user: { id: '200' }, roles: [{ id: 'admin', name: 'owner' }] }
+    value.event.member = { user: { id: '200' }, roles: [{ id: 'custom', name: 'admin' }] }
     Object.assign(value, { user: { authority: 5 } })
     expect(await managementAccess(value)).toBe('qqNotConfigured')
     for (const platform of ['qqguild', 'sandbox:test', 'unsupported']) {
       expect(await managementAccess(Object.assign(qqSession(), { platform }), grants)).toBe('unsupported')
     }
     expect(await managementAccess(Object.assign(session('onebot', {}, [{ id: 'member' }]), { selfId: 'bot-a', channelId: '100' }), grants)).toBe('denied')
+  })
+
+  it.each(['owner', 'admin', 'member'])('uses QQ event role %s before grants or member lookup', async role => {
+    const value = qqSession()
+    // The real QQ group event has roles but no nested member.user.
+    value.event.member = { roles: [{ id: role }] }
+    const expected = role === 'member' ? 'denied' : 'allowed'
+    expect(await managementAccess(value)).toBe(expected)
+    expect(await managementAccess(value, grants)).toBe(expected)
+    expect(value.bot.getGuildMember).not.toHaveBeenCalled()
+  })
+
+  it.each(['owner', 'admin', 'member'])('queries missing QQ role and respects native %s over manual grants', async role => {
+    const value = qqSession()
+    vi.mocked(value.bot.getGuildMember).mockResolvedValue({ user: { id: '200' }, roles: [{ id: role }] })
+    const expected = role === 'member' ? 'denied' : 'allowed'
+    expect(await managementAccess(value)).toBe(expected)
+    expect(await managementAccess(value, grants)).toBe(expected)
+    expect(value.bot.getGuildMember).toHaveBeenCalledWith('100', '200')
+  })
+
+  it('does not cache a role across operations or allow a grant to override demotion', async () => {
+    const value = qqSession()
+    const query = vi.mocked(value.bot.getGuildMember)
+    query.mockResolvedValueOnce({ user: { id: '200' }, roles: [{ id: 'admin' }] })
+      .mockResolvedValueOnce({ user: { id: '200' }, roles: [{ id: 'member' }] })
+    expect(await managementAccess(value, grants)).toBe('allowed')
+    expect(await managementAccess(value, grants)).toBe('denied')
+  })
+
+  it.each(['event', 'query', 'query-missing-id'])('rejects %s identity failures even with a matching manual grant', async source => {
+    const value = qqSession()
+    const member = { user: { id: 'different-member' }, roles: [{ id: 'admin' }] }
+    if (source === 'event') value.event.member = member
+    else vi.mocked(value.bot.getGuildMember).mockResolvedValue(source === 'query' ? member : { roles: member.roles })
+    expect(await managementAccess(value, grants)).toBe('unavailable')
+  })
+
+  it.each(['missing-method', 'rejected', 'unknown-role'])('retains explicit fallback for %s and scopes it to the login selfId, not the AppID', async reason => {
+    const value = qqSession()
+    Object.assign(value.bot, { config: { id: 'application-id' } })
+    if (reason === 'missing-method') value.bot.getGuildMember = undefined as never
+    else if (reason === 'rejected') vi.mocked(value.bot.getGuildMember).mockRejectedValue(new Error('not supported'))
+    else vi.mocked(value.bot.getGuildMember).mockResolvedValue({ user: { id: '200' }, roles: [{ id: 'unknown', name: 'admin' }] })
+    expect(await managementAccess(value)).toBe('qqNotConfigured')
+    expect(await managementAccess(value, [{ ...grants[0]!, selfId: 'application-id' }])).toBe('qqNotConfigured')
+    expect(await managementAccess(value, grants)).toBe('allowed')
+  })
+
+  it('fails closed on a timed out QQ role lookup even with fallback grants', async () => {
+    vi.useFakeTimers()
+    try {
+      const value = qqSession()
+      let resolve!: (member: any) => void
+      vi.mocked(value.bot.getGuildMember).mockImplementation(() => new Promise(done => { resolve = done }))
+      const result = managementAccess(value, grants)
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(await result).toBe('unavailable')
+      resolve({ user: { id: '200' }, roles: [{ id: 'admin' }] })
+      expect(await result).toBe('unavailable')
+    } finally { vi.useRealTimers() }
   })
 
   it('supports multiple explicit members and entries and observes revoked grants immediately', async () => {

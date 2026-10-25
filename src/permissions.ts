@@ -2,7 +2,7 @@ import type { Session } from 'koishi'
 
 export type ManagementAccess = 'allowed' | 'denied' | 'unavailable' | 'unsupported' | 'qqNotConfigured' | 'qqNotAuthorized'
 
-/** Explicit operator grants for the official QQ group API, not platform role claims. */
+/** Fallback operator grants when official QQ member roles are unavailable. */
 export interface QQGroupManager {
   selfId: string
   groupId: string
@@ -60,6 +60,24 @@ async function checkGroupAccess(session: Session, qqGroupManagers: readonly QQGr
       // Bind authorization to the actual destination and bot, never to a display name or QQ number.
       if (!validQQIdentity(session.selfId) || !validQQIdentity(guildId) || !validQQIdentity(userId)
         || session.channelId !== guildId) return 'unavailable'
+      // Published QQ adapters expose owner/admin/member on message events and getGuildMember.
+      // An identity mismatch is never eligible for fallback authorization.
+      const fromMember = (member: typeof session.event.member): ManagementAccess => {
+        if (member?.user?.id && member.user.id !== userId) return 'unavailable'
+        const roles = member?.roles
+        if (!Array.isArray(roles) || roles.length !== 1) return 'unavailable'
+        return roleAccess(roles[0]?.id, ['owner', 'admin'], ['member'])
+      }
+      const eventMember = session.event.member
+      if (eventMember?.user?.id && eventMember.user.id !== userId) return 'unavailable'
+      let access = fromMember(eventMember)
+      if (access === 'allowed' || access === 'denied') return access
+      try {
+        const member = await bot.getGuildMember(guildId, userId)
+        if (member?.user && member.user.id !== userId) return 'unavailable'
+        access = fromMember(member)
+        if (access === 'allowed' || access === 'denied') return member?.user?.id === userId ? access : 'unavailable'
+      } catch { /* Older adapters or QQ API permissions may not provide roles. */ }
       const grants = qqGroupManagers.filter(row => validQQGroupManager(row)
         && row.selfId === session.selfId && row.groupId === guildId)
       if (!grants.length) return 'qqNotConfigured'

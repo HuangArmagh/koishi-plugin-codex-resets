@@ -84,9 +84,13 @@ export function apply(ctx: Context, input: Partial<Config> = {}): void {
     const session = target.platform === 'telegram' && target.type === 'channel' ? bot.session({
       type: 'send', guild: { id: target.guildId },
       channel: { id: target.targetId, type: Universal.Channel.Type.TEXT },
+    }) : target.platform === 'qq' && target.type === 'private' ? bot.session({
+      type: 'send', channel: { id: target.targetId, type: Universal.Channel.Type.DIRECT },
     }) : undefined
+    // Satori's private helper retains only the channel ID from createDirectChannel.
+    // QQ's encoder needs the DIRECT session to select its private API endpoint.
     const ids = target.type === 'private'
-      ? await bot.sendPrivateMessage(target.targetId, message, target.guildId || undefined)
+      ? await bot.sendPrivateMessage(target.targetId, message, target.guildId || undefined, session ? { session } : undefined)
       : await bot.sendMessage(target.targetId, message, undefined, session ? { session } : undefined)
     if (!ids?.length) throw new Error('适配器没有返回成功发送的消息 ID')
   }, {

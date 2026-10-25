@@ -41,7 +41,7 @@ async function setup(configured = true, locale: LanguageSetting = 'auto') {
   if (configured) qqGroupManagers.push({ selfId: bot.selfId, groupId: 'group-a', userIds: ['member-a'] })
   const client = (userId = 'member-a', groupId?: string) => {
     const result = app.mock.client(userId, groupId)
-    // Mirrors official QQ group events: same guild/channel OpenID and no member roles.
+    // Exercises QQ events with missing roles and an unavailable member API.
     result.event.platform = 'qq'
     return result
   }
@@ -49,6 +49,28 @@ async function setup(configured = true, locale: LanguageSetting = 'auto') {
 }
 
 describe('official QQ authorization through Koishi commands', () => {
+  it.each(locales.flatMap((locale, index) => ['', '/', '!'].map(prefix => ({ locale, index, prefix }))))(
+    'accepts native QQ administrators and blocks members through all $locale commands with "$prefix"', async ({ locale, index, prefix }) => {
+      const { bot, client, store, qqGroupManagers, send } = await setup(false)
+      const admin = client('member-a', 'group-a'), member = client('member-b', 'group-a')
+      admin.event.member = { roles: [{ id: 'admin' }] }
+      member.event.member = { roles: [{ id: 'member' }] }
+      qqGroupManagers.push({ selfId: bot.selfId, groupId: 'group-a', userIds: ['member-b'] })
+      const run = (action: keyof typeof commandNames) => prefix + commandNames[action][index]
+      expect(await admin.receive(run('subscribe'))).toEqual([text(locale, 'subscribed', { language: languageNames[locale] })])
+      const before = await store.subscriptions()
+      for (const action of ['subscribe', 'unsubscribe'] as const) {
+        expect(await member.receive(run(action))).toEqual([text(locale, 'adminOnly')])
+        expect(await store.subscriptions()).toEqual(before)
+      }
+      expect((await member.receive(run('status')))[0]).toContain(text(locale, 'statusTitle'))
+      expect(await admin.receive(run('unsubscribe'))).toEqual([text(locale, 'unsubscribed')])
+      expect(await store.subscriptions()).toHaveLength(0)
+      expect(bot.getGuildMember).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
+    },
+  )
+
   it.each(locales.flatMap((locale, index) => ['', '/', '!'].map(prefix => ({ locale, index, prefix }))))(
     'supports the three commands in $locale with prefix "$prefix" and exact QQ grants', async ({ locale, index, prefix }) => {
       const { store, bot, wake, client, send } = await setup()
@@ -68,7 +90,7 @@ describe('official QQ authorization through Koishi commands', () => {
       expect(await store.subscriptions()).toHaveLength(0)
       expect(wake).toHaveBeenCalledTimes(1)
       expect(send).not.toHaveBeenCalled()
-      expect(bot.getGuildMember).not.toHaveBeenCalled()
+      expect(bot.getGuildMember).toHaveBeenCalledWith('group-a', 'member-a')
     },
   )
 
