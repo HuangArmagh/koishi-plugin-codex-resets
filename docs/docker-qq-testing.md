@@ -17,7 +17,7 @@
 
 ## 1. 上传安装包
 
-将 `koishi-plugin-codex-resets-0.5.2.tgz` 通过 SFTP 或 scp 上传到 Linux 服务器的 `/tmp/`。这是已经编译好的安装包，服务器无需克隆源码或安装 TypeScript。
+从项目 `packages/releases/` 选择正式 `koishi-plugin-codex-resets-0.5.2.tgz`，或从 `packages/test/` 的指定构建目录选择测试包，通过 SFTP 或 scp 上传到 Linux 服务器的 `/tmp/` 作为传输暂存。这是已经编译好的安装包，服务器无需克隆源码或安装 TypeScript；本地项目不再把安装包保存在根目录。
 
 在 Linux 服务器执行：
 

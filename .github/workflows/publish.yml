@@ -23,8 +23,8 @@ jobs:
     env:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
-      - name: Select temporary package directory
-        run: echo "RELEASE_DIR=$RUNNER_TEMP/codex-resets-release" >> "$GITHUB_ENV"
+      - name: Select project package directory
+        run: echo "RELEASE_DIR=$GITHUB_WORKSPACE/packages/ci" >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.sha }}
@@ -67,8 +67,8 @@ jobs:
       NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
       NPM_CONFIG_PROVENANCE: 'false'
     steps:
-      - name: Select temporary package directory
-        run: echo "RELEASE_DIR=$RUNNER_TEMP/codex-resets-release" >> "$GITHUB_ENV"
+      - name: Select project package directory
+        run: echo "RELEASE_DIR=$GITHUB_WORKSPACE/packages/ci" >> "$GITHUB_ENV"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.sha }}

@@ -17,25 +17,35 @@ QQ 官方群的回归额外覆盖：默认拒绝、机器人／群／用户精�
 
 修改 GitHub 工作流时，提交前另需运行 `actionlint .github/workflows/publish.yml`，检查表达式和上下文。仅能解析 YAML 不代表 GitHub 能执行该工作流。
 
-## 临时目录打包
+## 项目内安装包目录
 
-每次本地验证都创建新的临时目录，并通过 `RELEASE_DIR` 指定输出位置。不要在项目根目录直接运行 `npm pack`，以免覆盖已有同名正式安装包。工作分支即使暂未修改版本号，其测试包内容也可能已与 npm／GitHub 发布附件不同。
+所有安装包统一放在项目内的 `packages/`，不放项目根目录或系统临时目录。目录不提交 Git，也不会进入 npm 包：
 
-Linux / macOS（sh、bash、zsh）：
+```text
+packages/
+  releases/                 原始正式安装包（保留发布时的字节）
+  test/<版本>-<时间>-<后缀>/  每次本地验证的独立安装包
+  ci/                       GitHub Actions 的构建和发布包
+```
+
+完成构建与测试后直接运行，无需预先配置路径：
 
 ```sh
-export RELEASE_DIR="$(mktemp -d)"
 npm run release:pack
 ```
 
-Windows PowerShell：
+脚本默认在 `packages/test/` 下创建独立目录，输出包的相对路径、版本和 SHA-256。即使版本号没有变化，也不会覆盖已有测试包或正式包。包通过文件范围、入口、清单一致性及疑似隐私信息检查后才保存到目标位置。
+
+若以前设置过 `RELEASE_DIR`，先清除该环境变量以使用默认路径：PowerShell 使用 `Remove-Item Env:RELEASE_DIR -ErrorAction SilentlyContinue`，sh/bash/zsh 使用 `unset RELEASE_DIR`。需要指定目录时，必须选择 `packages/` 内的子目录，例如 PowerShell：
 
 ```powershell
-$env:RELEASE_DIR = Join-Path ([IO.Path]::GetTempPath()) ('codex-resets-pack-' + [guid]::NewGuid().ToString('N'))
+$env:RELEASE_DIR = 'packages/manual-check'
 npm run release:pack
 ```
 
-仅使用校验成功的安装包。输出文件为 `RELEASE_DIR` 下的 `koishi-plugin-codex-resets-<当前版本>.tgz`；脚本同时输出版本和 SHA-256，并检查包内文件范围、入口、清单一致性及疑似隐私信息。需要再次打包时，重新执行对应系统的临时目录设置命令。
+目标已有同名 `.tgz` 时脚本会拒绝覆盖；请换新目录或清除环境变量回到自动目录。项目根目录、`packages/` 以外的路径及通过符号链接／junction 绕出的路径都会被拒绝。不要在项目根目录直接运行 `npm pack`，该 npm 原生命令不会使用项目打包脚本的目录与保护规则。
+
+`packages/releases/` 只保存对应 npm／GitHub Release 的原始包，不使用当前工作分支重新构建后替换。测试包即使仍显示已发布的版本号，其内容也可能与正式包不同；本地提交不会自动提升版本或发布。
 
 此流程不修改版本、不创建标签、不发布 npm，也不覆盖项目根目录的正式包。测试包仅用于本地验收，不应替换同版本的已发布附件；安装方式见[使用与配置](usage.md#使用本地安装包)。
 

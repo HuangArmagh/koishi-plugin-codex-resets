@@ -48,7 +48,7 @@ Supports **English, Simplified Chinese, Traditional Chinese, Japanese and Korean
 | [主动推送文案 / Notification messages](docs/notification-messages.md) | 预告、执行与订阅确认 / Announcements, executed resets and subscription confirmations |
 | [Docker / QQ 验收 / Docker and QQ testing](docs/docker-qq-testing.md) | 部署与实际会话测试 / Deployment and conversation testing |
 | [API 与故障恢复 / API and recovery](docs/api.md) | 接口、时间校验、限流与请求恢复 / Endpoints, timestamps, rate limits and request recovery |
-| [开发与打包 / Development and packaging](docs/development.md) | 回归测试与临时目录打包 / Regression tests and packaging in a temporary directory |
+| [开发与打包 / Development and packaging](docs/development.md) | 回归测试与项目内 packages/ 打包 / Regression tests and packaging under packages/ |
 | [发布与验证 / Publishing and verification](docs/publishing.md) | GitHub Release → npm 流程 / GitHub Release → npm workflow |
 
 [MIT License](LICENSE)

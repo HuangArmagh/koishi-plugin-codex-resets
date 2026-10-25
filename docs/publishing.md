@@ -65,7 +65,7 @@ npm trust github koishi-plugin-codex-resets --repo HuangArmagh/koishi-plugin-cod
 
 ## 本地验证与手动备用发布
 
-构建、回归验证和本地测试包统一遵循[开发与本地打包](development.md)。先运行 `npm ci` 和 `npm run check`，再按对应系统的示例创建新的临时目录，设置 `RELEASE_DIR` 并运行 `npm run release:pack`。保留项目根目录的已有正式安装包，不用当前工作分支重新生成后替换已发布附件。
+构建、回归验证和本地测试包统一遵循[开发与本地打包](development.md)。先运行 `npm ci` 和 `npm run check`，再运行 `npm run release:pack`，默认在项目的 `packages/test/` 下为每次构建生成独立目录。已有正式安装包保存在 `packages/releases/`；CI 使用 `$GITHUB_WORKSPACE/packages/ci`。所有安装包都放在项目内的 `packages/` 子目录，不用当前工作分支重新生成后替换已发布附件。
 
 只有维护者明确要求手动发布时，才使用下面的备用流程：
 

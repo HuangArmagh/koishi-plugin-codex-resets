@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, writeFileSync } from 'node:fs'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -149,6 +149,38 @@ function output(values) {
   console.log(JSON.stringify(values))
 }
 
+export function packageDirectory(directory, cwd = process.cwd()) {
+  const root = resolve(cwd, 'packages')
+  const target = resolve(cwd, directory)
+  const path = relative(root, target)
+  assert.ok(path && !isAbsolute(path) && path !== '..' && !path.startsWith('..' + sep), 'Package output must be in a subdirectory of packages/')
+  // Reject symlinks/junctions so an apparent in-project destination cannot escape the package directory.
+  let current = resolve(cwd)
+  for (const part of relative(current, target).split(sep)) {
+    current = join(current, part)
+    assert.ok(!lstatSync(current, { throwIfNoEntry: false })?.isSymbolicLink(), 'Package output must not traverse symlinks or junctions')
+  }
+  return target
+}
+
+export function preparePackageDirectory(version, configuredDirectory, cwd = process.cwd()) {
+  assert.match(version, stableVersion, 'Unexpected package version')
+  if (configuredDirectory) {
+    const directory = packageDirectory(configuredDirectory, cwd)
+    mkdirSync(directory, { recursive: true })
+    return directory
+  }
+  const root = packageDirectory('packages/test', cwd)
+  mkdirSync(root, { recursive: true })
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return mkdtempSync(join(root, `${version}-${stamp}-`))
+}
+
+export function writeNewArchive(archive, bytes) {
+  // Exclusive creation also prevents two pack commands from overwriting the same destination.
+  writeFileSync(archive, bytes, { flag: 'wx' })
+}
+
 async function main(command) {
   const manifest = jsonFile('package.json')
   validateManifest(manifest, jsonFile('package-lock.json'))
@@ -166,23 +198,32 @@ async function main(command) {
     return
   }
   assert.ok(['pack', 'preflight', 'verify', 'attach'].includes(command), 'Unknown release command')
-  assert.ok(process.env.RELEASE_DIR, 'RELEASE_DIR is required; never overwrite the local published archive')
-  const directory = resolve(process.env.RELEASE_DIR)
-  assert.notEqual(directory, process.cwd(), 'Use a separate directory for release checks')
+  if (command !== 'pack') assert.ok(process.env.RELEASE_DIR, 'RELEASE_DIR is required to select the tested archive')
+  const directory = command === 'pack'
+    ? preparePackageDirectory(manifest.version, process.env.RELEASE_DIR)
+    : packageDirectory(process.env.RELEASE_DIR)
   const filename = `${packageName}-${manifest.version}.tgz`
   const archive = join(directory, filename)
   if (command === 'pack') {
-    mkdirSync(directory, { recursive: true })
+    assert.ok(!existsSync(archive), 'Package archive already exists; choose a new directory instead of overwriting it')
     assert.ok(process.env.npm_execpath, 'Use npm run release:pack so the same npm CLI can be called without a shell')
-    execFileSync(process.execPath, [process.env.npm_execpath, 'pack', '--ignore-scripts', '--pack-destination', directory], { stdio: 'inherit' })
+    const staging = mkdtempSync(join(directory, '.pack-'))
+    const stagedArchive = join(staging, filename)
+    try {
+      execFileSync(process.execPath, [process.env.npm_execpath, 'pack', '--ignore-scripts', '--pack-destination', staging], { stdio: 'inherit' })
+      const bytes = readFileSync(stagedArchive), hashes = digests(bytes), entries = readArchive(bytes)
+      auditEntries(entries, manifest)
+      for (const [name, content] of entries) assert.ok(content.equals(readFileSync(name.slice('package/'.length))), `Packed file mismatch: ${name}`)
+      writeNewArchive(archive, bytes)
+      output({ version: manifest.version, sha256: hashes.sha256, archive: relative(process.cwd(), archive) })
+    } finally {
+      rmSync(stagedArchive, { force: true })
+      rmdirSync(staging)
+    }
+    return
   }
   const bytes = readFileSync(archive), hashes = digests(bytes), entries = readArchive(bytes)
   auditEntries(entries, manifest)
-  if (command === 'pack') {
-    for (const [name, content] of entries) assert.ok(content.equals(readFileSync(name.slice('package/'.length))), `Packed file mismatch: ${name}`)
-    output({ version: manifest.version, sha256: hashes.sha256 })
-    return
-  }
   assert.match(process.env.EXPECTED_SHA256 ?? '', /^[a-f0-9]{64}$/, 'Missing tested artifact digest')
   assert.equal(hashes.sha256, process.env.EXPECTED_SHA256, 'Artifact differs from the tested build')
   if (command === 'preflight') {

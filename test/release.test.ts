@@ -1,10 +1,12 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import { join, relative, resolve, sep } from 'node:path'
 import { gzipSync } from 'node:zlib'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   auditEntries, digests, packageName, readArchive, registryState, releaseAssetState,
-  repository, validateManifest, validateRelease,
+  repository, validateManifest, validateRelease, packageDirectory, preparePackageDirectory, writeNewArchive,
 } from '../scripts/release.mjs'
 
 const require = createRequire(import.meta.url)
@@ -140,11 +142,11 @@ describe('explicit release publishing', () => {
     expect(() => releaseAssetState(release, event().release.tag_name, filename, { ...hashes, sha256: 'different' }, 123)).toThrow('never replace')
   })
 
-  it('initializes temporary paths after the runner starts, outside job-level expressions', () => {
+  it('keeps CI archives under the project directory, outside job-level expressions', () => {
     const workflow = load(readFileSync('.github/workflows/publish.yml', 'utf8'))
     for (const job of Object.values(workflow.jobs) as { env: object; steps: { run?: string }[] }[]) {
       expect(JSON.stringify(job.env)).not.toContain('runner.')
-      expect(job.steps[0].run).toContain('$RUNNER_TEMP/codex-resets-release')
+      expect(job.steps[0].run).toContain('$GITHUB_WORKSPACE/packages/ci')
       expect(job.steps[0].run).toContain('>> "$GITHUB_ENV"')
     }
   })
@@ -174,5 +176,61 @@ describe('explicit release publishing', () => {
         if (step.run) expect(step.run).not.toMatch(/npm version|git tag|gh release create/)
       }
     }
+  })
+})
+
+describe('project package output and immutable archives', () => {
+  const roots: string[] = []
+  const fixture = () => {
+    const root = mkdtempSync(join(tmpdir(), 'codex-resets-release-test-'))
+    roots.push(root)
+    return root
+  }
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      // Only remove the disposable directories this test created under the OS temporary directory.
+      expect(resolve(root).startsWith(resolve(tmpdir()) + sep)).toBe(true)
+      expect(relative(tmpdir(), root)).toMatch(/^codex-resets-release-test-/)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('creates unique in-project directories for repeated builds of the same version', () => {
+    const root = fixture()
+    const first = preparePackageDirectory('0.5.2', undefined, root)
+    const second = preparePackageDirectory('0.5.2', undefined, root)
+    expect(first).not.toBe(second)
+    for (const directory of [first, second]) {
+      expect(relative(root, directory).split(sep).slice(0, 2)).toEqual(['packages', 'test'])
+      expect(existsSync(directory)).toBe(true)
+    }
+    expect(preparePackageDirectory('0.5.2', 'packages/ci', root)).toBe(join(root, 'packages', 'ci'))
+  })
+
+  it('rejects the project root, packages root and paths outside packages', () => {
+    const root = fixture()
+    for (const directory of ['.', 'packages', 'packages/..', '../outside', 'other', join(root, 'other')]) {
+      expect(() => preparePackageDirectory('0.5.2', directory, root)).toThrow('subdirectory of packages/')
+    }
+    expect(existsSync(join(root, 'other'))).toBe(false)
+  })
+
+  it.each(['packages', 'packages/link'])('rejects a %s symlink or junction that points outside package storage', link => {
+    const root = fixture(), outside = fixture()
+    const directory = join(root, link)
+    if (link !== 'packages') mkdirSync(join(root, 'packages'))
+    symlinkSync(outside, directory, process.platform === 'win32' ? 'junction' : 'dir')
+    expect(() => packageDirectory(join(directory, 'build'), root)).toThrow('symlinks or junctions')
+    expect(existsSync(join(outside, 'build'))).toBe(false)
+  })
+
+  it('refuses to overwrite a same-version archive, preserving the original bytes', () => {
+    const root = fixture()
+    const directory = preparePackageDirectory(manifest.version, 'packages/releases', root)
+    const file = join(directory, `${packageName}-${manifest.version}.tgz`)
+    const original = Buffer.from('published archive')
+    writeNewArchive(file, original)
+    expect(() => writeNewArchive(file, Buffer.from('different working tree'))).toThrow()
+    expect(readFileSync(file)).toEqual(original)
   })
 })

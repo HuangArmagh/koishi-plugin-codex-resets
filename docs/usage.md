@@ -20,12 +20,12 @@ npm install koishi-plugin-codex-resets@latest --registry https://registry.npmjs.
 
 ### 使用本地安装包
 
-已发布版本使用对应 Release 的原始安装包；从源码构建测试包时，按[开发与本地打包](development.md#临时目录打包)输出到新建的临时目录，保留已有正式安装包。
+已发布版本使用对应 Release 的原始安装包，保存在项目的 `packages/releases/`；从源码构建测试包时，按[开发与本地打包](development.md#项目内安装包目录)运行 `npm run release:pack`，默认输出到 `packages/test/` 下的新建目录，保留已有正式安装包。
 
-在 Koishi 实例目录中，使用该实例现有的包管理器安装临时目录里的 `.tgz`。npm 示例：
+在 Koishi 实例目录中，使用该实例现有的包管理器安装上述目录里的 `.tgz`。npm 示例（替换项目路径和实际构建目录）：
 
 ```sh
-npm install /path/to/temporary-directory/koishi-plugin-codex-resets-0.5.2.tgz
+npm install /path/to/plugin-project/packages/test/BUILD_DIRECTORY/koishi-plugin-codex-resets-0.5.2.tgz
 ```
 
 将示例路径替换为本次实际输出位置。然后在控制台添加并启用插件；Docker 和其他包管理器的安装方法见 [Docker / QQ 验收](docker-qq-testing.md)。
