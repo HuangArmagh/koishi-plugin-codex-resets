@@ -70,6 +70,8 @@ npm ci
 npm run check
 ```
 
+修改 GitHub 工作流时，提交前还需运行 `actionlint .github/workflows/publish.yml`，检查表达式和上下文。仅能解析 YAML 不代表 GitHub 能执行该工作流。
+
 本地验证打包时，将环境变量 `RELEASE_DIR` 设置为一个新的临时目录，再运行 `npm run release:pack`。该命令只构建归档并检查内容，不修改版本、不发布网络内容。应先运行构建／测试；已有正式安装包不覆盖。
 
 只有维护者明确要求手动发布时，才使用下面的备用流程：

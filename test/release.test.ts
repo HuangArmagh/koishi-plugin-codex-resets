@@ -140,6 +140,15 @@ describe('explicit release publishing', () => {
     expect(() => releaseAssetState(release, event().release.tag_name, filename, { ...hashes, sha256: 'different' }, 123)).toThrow('never replace')
   })
 
+  it('initializes temporary paths after the runner starts, outside job-level expressions', () => {
+    const workflow = load(readFileSync('.github/workflows/publish.yml', 'utf8'))
+    for (const job of Object.values(workflow.jobs) as { env: object; steps: { run?: string }[] }[]) {
+      expect(JSON.stringify(job.env)).not.toContain('runner.')
+      expect(job.steps[0].run).toContain('$RUNNER_TEMP/codex-resets-release')
+      expect(job.steps[0].run).toContain('>> "$GITHUB_ENV"')
+    }
+  })
+
   it('runs only for published Releases, with a strictly dependent publishing job and no npm token', () => {
     const source = readFileSync('.github/workflows/publish.yml', 'utf8')
     const workflow = load(source)
