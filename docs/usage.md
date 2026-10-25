@@ -25,7 +25,7 @@ npm install koishi-plugin-codex-resets@latest --registry https://registry.npmjs.
 在 Koishi 实例目录中，使用该实例现有的包管理器安装临时目录里的 `.tgz`。npm 示例：
 
 ```sh
-npm install /path/to/temporary-directory/koishi-plugin-codex-resets-0.5.1.tgz
+npm install /path/to/temporary-directory/koishi-plugin-codex-resets-0.5.2.tgz
 ```
 
 将示例路径替换为本次实际输出位置。然后在控制台添加并启用插件；Docker 和其他包管理器的安装方法见 [Docker / QQ 验收](docker-qq-testing.md)。
