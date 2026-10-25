@@ -117,7 +117,7 @@ describe('official sandbox proactive delivery', () => {
     const group = session(bot, false)
     await app.database.setUser(bot.platform!, '200', { authority: 4 })
     for (const name of ['codexresetsubscribe', 'codexresetunsubscribe']) {
-      expect((await group.execute({ name, args: [] }, true)).join('')).toContain('Could not verify your group administrator permissions')
+      expect((await group.execute({ name, args: [] }, true)).join('')).toBe(text('en-US', 'groupUnsupported'))
     }
     expect(await store.subscriptions()).toHaveLength(0)
     expect(app.http).not.toHaveBeenCalled()

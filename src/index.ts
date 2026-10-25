@@ -5,6 +5,7 @@ import { registerCommands } from './commands'
 export { registerCommands, targetFromSession } from './commands'
 import { commandNames, descriptions, languageNames, locales, text, type LanguageSetting } from './locales'
 import { Monitor } from './monitor'
+import { qqIdentityPattern, validateQQGroupManagers, type QQGroupManager } from './permissions'
 import { defineModels, KoishiStore } from './store'
 import { errorText } from './util'
 
@@ -21,6 +22,7 @@ export interface Config {
   pollIntervalMs: number
   requestTimeoutMs: number
   sendIntervalMs: number
+  qqGroupManagers: QQGroupManager[]
 }
 
 export const defaults: Config = {
@@ -28,6 +30,7 @@ export const defaults: Config = {
   pollIntervalMs: 300_000,
   requestTimeoutMs: 15_000,
   sendIntervalMs: 1000,
+  qqGroupManagers: [],
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -38,10 +41,16 @@ export const Config: Schema<Config> = Schema.object({
   pollIntervalMs: Schema.number().min(60_000).max(86_400_000).step(1000).default(defaults.pollIntervalMs).i18n(descriptions('configPoll')),
   requestTimeoutMs: Schema.number().min(1000).max(60_000).default(defaults.requestTimeoutMs).i18n(descriptions('configTimeout')),
   sendIntervalMs: Schema.number().min(1000).max(60_000).default(defaults.sendIntervalMs).i18n(descriptions('configSend')),
+  qqGroupManagers: Schema.array(Schema.object({
+    selfId: Schema.string().pattern(qqIdentityPattern).required().i18n(descriptions('configQQSelf')),
+    groupId: Schema.string().pattern(qqIdentityPattern).required().i18n(descriptions('configQQGroup')),
+    userIds: Schema.array(Schema.string().pattern(qqIdentityPattern)).min(1).required().i18n(descriptions('configQQUsers')),
+  })).default([]).i18n(descriptions('configQQManagers')),
 })
 
 export function apply(ctx: Context, input: Partial<Config> = {}): void {
   const config = { ...defaults, ...input }
+  validateQQGroupManagers(config.qqGroupManagers)
   if (config.locale !== 'auto' && !locales.includes(config.locale)) throw new Error('Unsupported locale')
   if (!Number.isFinite(config.pollIntervalMs) || config.pollIntervalMs < 60_000) throw new Error('检查间隔不能低于 60 秒')
   if (!Number.isFinite(config.sendIntervalMs) || config.sendIntervalMs < 1000) throw new Error('发送间隔不能低于 1 秒')

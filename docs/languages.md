@@ -16,7 +16,7 @@ Send `reset-status` to see the current signal, the three most recent resets, and
 
 Send `reset-subscribe` to receive explicit reset announcements and executed-reset alerts in English. Probability forecasts are only shown in status queries, even at 100%. Send `reset-unsubscribe` to stop notifications and clear pending deliveries for this conversation. Each successful operation returns one confirmation without an extra test message.
 
-Anyone can query status. Only platform group owners or administrators may manage a group or channel subscription; all three commands are available in private chats. Koishi authority levels do not grant platform administrator status. Telegram topics and Discord channels have independent subscriptions. English timestamps use UTC. The reset record time comes from `announced_at`, an announcement or first-observation time, not necessarily the exact execution time.
+Anyone can query status. QQ (OneBot), Telegram and Discord require platform group owners or administrators for group/channel subscriptions. Official QQ groups instead require explicit operator grants in `qqGroupManagers`, scoped to a bot, group and user; these do not verify QQ roles. All three commands are available in private chats. Koishi authority levels do not grant group management access. Telegram topics and Discord channels have independent subscriptions. English timestamps use UTC. The reset record time comes from `announced_at`, an announcement or first-observation time, not necessarily the exact execution time.
 
 ## 简体中文
 
@@ -24,7 +24,7 @@ Anyone can query status. Only platform group owners or administrators may manage
 
 发送 `重置订阅开启`，接收中文重置预告和已执行重置提醒；概率预测只用于状态查询，100% 也不主动推送。发送 `重置订阅关闭` 停止当前会话推送并清除待发、待重试消息。两种成功操作各回复一条确认，不额外发送测试消息。
 
-状态查询所有用户可用；群聊或频道的订阅开关仅限平台群主／管理员，私聊三条指令全部可用。Koishi 用户等级不等于平台管理员身份。Telegram 话题和 Discord 频道各自独立订阅。简体中文时间使用 UTC+8。“重置记录时间”取自 `announced_at`，表示公告或首次观察时间，不一定是精确执行时刻。
+状态查询所有用户可用；QQ（OneBot）、Telegram、Discord 的群聊或频道订阅开关仅限平台群主／管理员。QQ 官方群使用维护者在 `qqGroupManagers` 中按机器人、群和用户配置的显式授权，不核验 QQ 角色。私聊三条指令全部可用。提高 Koishi 用户等级不会获得群管理授权。Telegram 话题和 Discord 频道各自独立订阅。简体中文时间使用 UTC+8。“重置记录时间”取自 `announced_at`，表示公告或首次观察时间，不一定是精确执行时刻。
 
 ## 繁體中文
 
@@ -32,7 +32,7 @@ Anyone can query status. Only platform group owners or administrators may manage
 
 傳送 `重置訂閱開啟`，接收繁體中文重置預告與已執行重置通知；機率預測只用於狀態查詢，100% 也不主動推送。傳送 `重置訂閱關閉` 停止目前會話推送，並清除待傳送與待重試通知。兩種成功操作各回覆一則確認，不額外傳送測試訊息。
 
-所有使用者都能查詢狀態；群組或頻道的訂閱開關僅限平台群主／管理員，私訊三條指令皆可使用。Koishi 使用者等級不等於平台管理員身分。Telegram 話題與 Discord 頻道各自獨立訂閱。繁體中文時間使用 UTC+8。「重置記錄時間」取自 `announced_at`，表示公告或首次觀察時間，不一定是精確執行時刻。
+所有使用者都能查詢狀態；QQ（OneBot）、Telegram、Discord 的群組或頻道訂閱開關僅限平台群主／管理員。QQ 官方群組使用維護者在 `qqGroupManagers` 中依機器人、群組和使用者設定的明確授權，不驗證 QQ 角色。私訊三條指令皆可使用。提高 Koishi 使用者等級不會取得群組管理授權。Telegram 話題與 Discord 頻道各自獨立訂閱。繁體中文時間使用 UTC+8。「重置記錄時間」取自 `announced_at`，表示公告或首次觀察時間，不一定是精確執行時刻。
 
 ## 日本語
 
@@ -40,7 +40,7 @@ Anyone can query status. Only platform group owners or administrators may manage
 
 `リセット購読` で明確なリセット予告と実行済みリセットの通知を日本語で受け取れます。確率予測は 100% でも自動送信せず、状況照会にのみ表示します。`リセット購読解除` でこのチャットへの通知を停止し、送信待ち・再試行待ちの通知を削除します。成功時はそれぞれ確認を 1 件だけ返し、追加のテスト通知は送りません。
 
-状況照会は全ユーザーが利用できます。グループやチャンネルの購読操作はプラットフォーム上の所有者・管理者のみ、個別チャットでは 3 つのコマンドをすべて利用できます。Koishi の権限レベルはプラットフォームの管理者権限を付与しません。Telegram のトピックと Discord のチャンネルは個別に購読します。日本語の時刻表示は UTC+9 です。記録時刻は `announced_at` に基づく告知・初回観測時刻であり、正確な実行時刻とは限りません。
+状況照会は全ユーザーが利用できます。QQ（OneBot）、Telegram、Discord のグループ・チャンネル購読操作はプラットフォーム上の所有者・管理者に限ります。QQ 公式グループではボット管理者が `qqGroupManagers` にボット・グループ・ユーザーを指定して認可します。QQ の役割確認ではありません。個別チャットでは 3 つのコマンドをすべて利用でき、Koishi の権限レベルだけではグループ管理を許可しません。Telegram のトピックと Discord のチャンネルは個別に購読します。日本語の時刻表示は UTC+9 です。記録時刻は `announced_at` に基づく告知・初回観測時刻であり、正確な実行時刻とは限りません。
 
 ## 한국어
 
@@ -48,7 +48,7 @@ Anyone can query status. Only platform group owners or administrators may manage
 
 `리셋구독`으로 명시적인 리셋 사전 공지와 실행된 리셋 알림을 한국어로 받습니다. 확률 예측은 100%라도 자동으로 보내지 않고 상태 조회에만 표시합니다. `리셋구독취소`로 이 채팅의 알림을 중지하고 전송 및 재시도 대기 중인 알림을 삭제합니다. 성공 시 각각 확인 메시지 한 건만 보내며 추가 테스트 알림은 보내지 않습니다.
 
-상태 조회는 누구나 사용할 수 있습니다. 그룹 및 채널의 구독 관리는 플랫폼 소유자 또는 관리자만 가능하며, 개인 채팅에서는 세 명령을 모두 사용할 수 있습니다. Koishi 권한 등급은 플랫폼 관리자 권한을 부여하지 않습니다. Telegram 토픽과 Discord 채널은 각각 독립적으로 구독합니다. 한국어 시각은 UTC+9로 표시합니다. 기록 시각은 `announced_at`의 공지 또는 최초 관측 시각이며 정확한 실행 시각과 다를 수 있습니다.
+상태 조회는 누구나 사용할 수 있습니다. QQ(OneBot), Telegram, Discord의 그룹 및 채널 구독 관리는 플랫폼 소유자 또는 관리자만 가능합니다. QQ 공식 그룹은 봇 운영자가 `qqGroupManagers`에 봇, 그룹, 사용자를 지정하여 별도 권한을 부여하며 QQ 역할을 검증하지 않습니다. 개인 채팅에서는 세 명령을 모두 사용할 수 있고 Koishi 권한 등급만으로 그룹 관리 권한을 얻을 수는 없습니다. Telegram 토픽과 Discord 채널은 각각 독립적으로 구독합니다. 한국어 시각은 UTC+9로 표시합니다. 기록 시각은 `announced_at`의 공지 또는 최초 관측 시각이며 정확한 실행 시각과 다를 수 있습니다.
 
 ## Banked Reset / 储备重置
 

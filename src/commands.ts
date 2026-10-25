@@ -4,11 +4,15 @@ import type { CodexApi } from './api'
 import { formatOverview } from './format'
 import { commandNames, languageNames, locales, parseLocale, text, type ActionName, type LanguageSetting, type Locale, type TextKey } from './locales'
 import type { Monitor } from './monitor'
-import { managementAccess } from './permissions'
+import { managementAccess, type QQGroupManager, type ManagementAccess } from './permissions'
 import type { Reset, StatusResponse, Target } from './types'
 import { errorText, targetKey } from './util'
 
-interface CommandConfig { locale: LanguageSetting }
+interface CommandConfig { locale: LanguageSetting; qqGroupManagers?: QQGroupManager[] }
+const accessMessages: Record<Exclude<ManagementAccess, 'allowed'>, TextKey> = {
+  denied: 'adminOnly', unavailable: 'roleUnavailable', unsupported: 'groupUnsupported',
+  qqNotConfigured: 'qqNotConfigured', qqNotAuthorized: 'qqNotAuthorized',
+}
 export const commandIds: Record<ActionName, string> = {
   status: 'codexresetstatus', subscribe: 'codexresetsubscribe', unsubscribe: 'codexresetunsubscribe',
 }
@@ -89,8 +93,8 @@ export function registerCommands(ctx: Context, monitor: Monitor, api: Pick<Codex
       return command.config.showWarning ? reply(argv, 'unknownOptions') : ''
     }
     if (command.name !== commandIds.status) {
-      const access = await managementAccess(session)
-      if (access !== 'allowed') return reply(argv, access === 'denied' ? 'adminOnly' : 'roleUnavailable')
+      const access = await managementAccess(session, config.qqGroupManagers)
+      if (access !== 'allowed') return reply(argv, accessMessages[access])
     }
   })
 

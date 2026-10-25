@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Session } from 'koishi'
-import { managementAccess } from '../src/permissions'
+import { managementAccess, validateQQGroupManagers, type QQGroupManager } from '../src/permissions'
 
 function session(platform: string, internal: Record<string, unknown> = {}, roles?: { id: string; name?: string }[]): Session {
   return { platform, guildId: '100', userId: '200', isDirect: false,
@@ -23,7 +23,7 @@ describe('platform administrator authorization', () => {
     } finally { vi.useRealTimers() }
   })
 
-  it.each(['onebot', 'telegram', 'discord', 'unsupported'])('allows private messages on %s without querying roles', async platform => {
+  it.each(['onebot', 'qq', 'qqguild', 'telegram', 'discord', 'unsupported'])('allows private messages on %s without querying roles', async platform => {
     const value = session(platform)
     Object.assign(value, { isDirect: true })
     expect(await managementAccess(value)).toBe('allowed')
@@ -99,7 +99,65 @@ describe('platform administrator authorization', () => {
     const fail = vi.fn(async () => { throw new Error('adapter offline') })
     const value = session(platform, { getChatMember: fail, getGuild: fail })
     value.bot.getGuildMember = fail
-    expect(await managementAccess(value)).toBe('unavailable')
-    expect(await managementAccess(session('unsupported', {}, [{ id: 'admin' }]))).toBe('unavailable')
+    expect(await managementAccess(value)).toBe(platform === 'unsupported' ? 'unsupported' : 'unavailable')
+    expect(await managementAccess(session('unsupported', {}, [{ id: 'admin' }]))).toBe('unsupported')
+  })
+})
+
+describe('official QQ explicit group authorization', () => {
+  const grants: QQGroupManager[] = [{ selfId: 'bot-a', groupId: '100', userIds: ['200'] }]
+  const qqSession = () => Object.assign(session('qq'), { selfId: 'bot-a', channelId: '100' })
+
+  it('requires opt-in and exact bot, group and member identities without calling member APIs', async () => {
+    const value = qqSession()
+    expect(await managementAccess(value)).toBe('qqNotConfigured')
+    expect(await managementAccess(value, grants)).toBe('allowed')
+    expect(value.bot.getGuildMember).not.toHaveBeenCalled()
+    expect(await managementAccess(Object.assign(qqSession(), { selfId: 'bot-b' }), grants)).toBe('qqNotConfigured')
+    expect(await managementAccess(Object.assign(qqSession(), { guildId: 'other', channelId: 'other' }), grants)).toBe('qqNotConfigured')
+    expect(await managementAccess(Object.assign(qqSession(), { userId: 'other' }), grants)).toBe('qqNotAuthorized')
+    expect(await managementAccess(Object.assign(qqSession(), { userId: '200-extra' }), grants)).toBe('qqNotAuthorized')
+  })
+
+  it.each([
+    { selfId: '' }, { userId: '' }, { guildId: '' }, { channelId: '' },
+    { channelId: 'other' }, { selfId: '*' }, { userId: ' 200' },
+  ])('rejects missing or inconsistent QQ destination identities: %j', patch => {
+    return expect(managementAccess(Object.assign(qqSession(), patch), grants)).resolves.toBe('unavailable')
+  })
+
+  it('does not treat role labels or high Koishi authority as QQ grants or authorize other platforms', async () => {
+    const value = qqSession()
+    value.event.member = { user: { id: '200' }, roles: [{ id: 'admin', name: 'owner' }] }
+    Object.assign(value, { user: { authority: 5 } })
+    expect(await managementAccess(value)).toBe('qqNotConfigured')
+    for (const platform of ['qqguild', 'sandbox:test', 'unsupported']) {
+      expect(await managementAccess(Object.assign(qqSession(), { platform }), grants)).toBe('unsupported')
+    }
+    expect(await managementAccess(Object.assign(session('onebot', {}, [{ id: 'member' }]), { selfId: 'bot-a', channelId: '100' }), grants)).toBe('denied')
+  })
+
+  it('supports multiple explicit members and entries and observes revoked grants immediately', async () => {
+    const value = qqSession()
+    const entries = [{ selfId: 'bot-a', groupId: '100', userIds: ['other'] }, ...structuredClone(grants)]
+    expect(await managementAccess(value, entries)).toBe('allowed')
+    entries.pop()
+    expect(await managementAccess(value, entries)).toBe('qqNotAuthorized')
+    expect(await managementAccess(value, [])).toBe('qqNotConfigured')
+  })
+
+  it.each([
+    null, {}, [null], [{}], [{ ...grants[0], selfId: '*' }], [{ ...grants[0], groupId: ' ' }],
+    [{ ...grants[0], userIds: [] }], [{ ...grants[0], userIds: ['*'] }],
+    [{ ...grants[0], userIds: [200] }], [{ ...grants[0], userIds: '200' }],
+    [{ ...grants[0], selfId: 123 }], [{ ...grants[0], userIds: ['200', ''] }],
+    [{ ...grants[0], userIds: ['200\n'] }], [{ ...grants[0], groupId: '100\r\n' }],
+  ])('rejects invalid authorization configuration: %j', value => {
+    expect(() => validateQQGroupManagers(value)).toThrow('Invalid qqGroupManagers')
+  })
+
+  it('accepts empty defaults and complete explicit grants', () => {
+    expect(() => validateQQGroupManagers([])).not.toThrow()
+    expect(() => validateQQGroupManagers(grants)).not.toThrow()
   })
 })

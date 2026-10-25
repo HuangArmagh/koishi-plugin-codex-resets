@@ -5,10 +5,11 @@
 | 平台 / 适配器 | 群聊或频道订阅、取消 | 状态查询与私聊 |
 | --- | --- | --- |
 | QQ / 官方 OneBot 适配器，平台标识 `onebot` | 当前群的 `owner`、`admin` | 所有用户 |
+| QQ / QQ 官方适配器，平台标识 `qq` | 维护者通过 `qqGroupManagers` 为当前机器人、群登记的用户；不核验平台角色 | 所有用户 |
 | Telegram / 官方 Telegram 适配器 | 当前群的 `creator`、`administrator` | 所有用户 |
 | Discord / 官方 Discord 适配器 | 服务器所有者、具有 `ADMINISTRATOR` 的成员；仅操作当前频道 | 所有用户 |
 | Koishi 官方沙盒，平台标识 `sandbox:` | 未提供平台管理员身份，暂不放行 | 查询、私聊订阅及主动推送可用 |
-| 其他平台、QQ 官方机器人群接口、未提供所需能力的桥接适配器 | 暂不放行群聊订阅和取消 | 适配器能接收指令、支持相应发送接口时可用 |
+| 其他平台、QQ 频道 `qqguild`、未提供所需能力的桥接适配器 | 暂不放行群聊订阅和取消 | 适配器能接收指令、支持相应发送接口时可用 |
 
 所有用户均不需要最低 Koishi 用户等级，但仍受实例的全局权限设置和会话过滤约束。Koishi 高权限用户、名字为“管理员”的角色，以及 Discord 的“管理服务器”权限，都不能替代上述平台管理员身份。
 
@@ -18,13 +19,41 @@ Discord 等结构化原生交互入口同样检查指令权限和别名过滤。
 
 原生入口已识别的指令若带有多余参数或未知选项，会返回插件自带的对应语言提示，固定 `locale` 优先。不会因此修改订阅、切换推送语言或发起查询。兼容入口仍要求完整指令，带额外参数的普通消息不触发。
 
-无法获取成员身份、返回数据不完整、接口失败或 15 秒内未完成校验时，回复无法验证权限，不改变订阅或语言。校验结果不做长期缓存，便于撤销管理员后及时生效。既有群订阅会继续推送；取消仍需有权限的用户通过支持的适配器执行。
+无法获取成员身份、返回数据不完整、接口失败或 15 秒内未完成校验时，回复无法验证权限，不改变订阅或语言。未支持的适配器会明确提示“此适配器暂不支持群聊订阅权限校验”。平台角色校验不做长期缓存，QQ 人工授权以当前生效配置为准。既有群订阅会继续推送；取消仍需有权限的用户通过支持的适配器执行。
+
+## QQ 官方适配器
+
+`@koishijs/plugin-adapter-qq` 的普通 QQ 群使用平台标识 `qq`，不同于 OneBot 的 `onebot` 和 QQ 频道的 `qqguild`。当前官方群接口没有可供本插件核验群主／管理员的成员角色，因此通过维护者手动配置授权。提高 Koishi 用户等级、勾选事件或关闭 QQ 沙箱模式不会替代授权。
+
+在 `codex-resets` 的插件配置中添加 `qqGroupManagers` 项：
+
+```yaml
+qqGroupManagers:
+  - selfId: "BOT_APP_ID"
+    groupId: "GROUP_OPENID"
+    userIds:
+      - "MEMBER_OPENID"
+```
+
+以上均为占位符，必须替换为实际平台标识：`selfId` 是机器人 ID，`groupId` 是该群的 `session.guildId`（与 `session.channelId` 相同），`userIds` 是允许管理该群订阅的成员 `session.userId` 列表。不要填写普通 QQ 号、群号、昵称、Koishi 用户数据库编号或私聊获得的用户 ID。所有字段均精确匹配，不支持通配符和空值。可为不同机器人、群分别添加条目。
+
+获取标识时，在 Koishi 控制台的用户表与频道表查看 `qq` 平台记录：用户表的 `qq` 字段对应用户 OpenID，频道表的 `id` 对应群 OpenID，`assignee` 对应负责该频道的机器人 ID。由拟授权用户先在目标群发送一次 `重置状态` 生成会话记录；结合现场测试确认对应记录，不能仅根据表中顺序或昵称猜测。如果实例已启用官方 `inspect` 插件，也可在该群检查会话标识。只在自己的控制台保存这些值，不要把真实 OpenID、配置密钥提交到仓库或公开包中。
+
+配置生效后，授权用户仍须在目标群发送 `重置订阅开启`，收到一条订阅成功确认后才会注册；发送 `重置订阅关闭` 则取消。配置名单本身不创建订阅、不发送测试消息。未登记该机器人／群时提示需要配置 `qqGroupManagers`；已登记该群但用户不在名单中时提示未授权。其他机器人、其他群、QQ 频道、角色名称以及 Koishi 高等级用户都不会继承这份授权。
+
+**此授权由维护者负责，不会随 QQ 群角色变化自动撤销。**移除或替换授权用户后保存配置，旧用户不能再管理订阅，但已有订阅继续推送；如需停止，应先由有权用户取消订阅，或保留另一位授权用户执行取消。状态查询和私聊不受名单限制，实例的全局权限及指令过滤仍然生效。
+
+授权成功只确认订阅写入，主动发送仍受 QQ 官方消息策略、机器人资质和发送权限限制，应另行在实际群中验证。
+
+依据：[官方 QQ 适配器及平台标识](https://koishi.chat/zh-CN/plugins/adapter/qq#内部接口)、[官方群消息转换](https://github.com/satorijs/satori/blob/main/adapters/qq/src/utils.ts)。
+
+For the official QQ adapter (`qq`), configure `qqGroupManagers` with exact `selfId`, group OpenID (`groupId`) and member OpenIDs (`userIds`) from that group. These are manual operator grants, not verified QQ administrator roles. The default empty list denies group management. Grants do not subscribe automatically, do not apply to `qqguild` or other platforms, and must be updated manually when membership roles change. Removing a grant does not cancel an existing subscription. Public status and private commands remain available, subject to Koishi's existing permissions and filters. Proactive delivery still requires permission from QQ.
 
 ## QQ / OneBot
 
 使用已连接的 OneBot 适配器，确认其正常提供群成员的角色 ID。插件优先读取本次消息中可信的 `member.roles`；缺失时调用适配器的 `getGuildMember`。识别协议角色 `owner` 和 `admin`，普通 `member` 不允许管理群订阅。
 
-QQ 官方群机器人接口和部分桥接实现未必返回这些身份信息，不能仅因“支持 QQ”就认为群管理员校验可用。无法确认时会拒绝群管理操作。私聊仍取决于该适配器是否支持私聊和主动发送。
+部分桥接实现未必返回这些身份信息，不能仅因“支持 QQ”就认为群管理员校验可用。无法确认时会拒绝群管理操作。QQ 官方群适配器使用上节的显式授权，不借用 OneBot 角色。私聊仍取决于该适配器是否支持私聊和主动发送。
 
 依据：[OneBot 适配器的成员转换](https://github.com/koishijs/koishi-plugin-adapter-onebot/blob/main/src/utils.ts)。
 

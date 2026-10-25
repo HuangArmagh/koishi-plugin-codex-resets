@@ -28,9 +28,9 @@ The status command shows the current status, the latest 3 resets and subscriptio
 | 日本語 | `リセット状況` | `リセット購読` | `リセット購読解除` |
 | 한국어 | `리셋상태` | `리셋구독` | `리셋구독취소` |
 
-所有用户可查询状态；群聊／频道的订阅开关仅限平台群主或管理员，私聊三条指令全部可用。群权限校验支持 **QQ（OneBot）、Telegram、Discord**，具体限制见[平台与权限](docs/platforms.md)。
+所有用户可查询状态，私聊三条指令全部可用。**QQ（OneBot）、Telegram、Discord** 的群聊／频道订阅开关仅限平台群主或管理员；**QQ 官方适配器**使用维护者配置的 `qqGroupManagers` 按机器人、群和用户精确授权。配置方法与限制见[平台与权限](docs/platforms.md)。
 
-Anyone can query status. Only platform group owners or administrators can manage group/channel subscriptions; all three commands are available in private chats. Group permission checks support **QQ (OneBot), Telegram and Discord**; see [platform requirements](docs/platforms.md).
+Anyone can query status, and all three commands are available in private chats. **QQ (OneBot), Telegram and Discord** require platform group owners or administrators for group/channel subscriptions. The **official QQ adapter** uses operator-configured `qqGroupManagers` grants scoped to a bot, group and user. See [platform requirements](docs/platforms.md).
 
 支持 **English、简体中文、繁體中文、日本語、한국어**。默认按订阅指令保存推送语言，也可在配置中固定语言。简繁中文使用 UTC+8，日语和韩语使用 UTC+9，英语使用 UTC。
 

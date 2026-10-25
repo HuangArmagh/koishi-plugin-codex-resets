@@ -1,6 +1,29 @@
 import type { Session } from 'koishi'
 
-export type ManagementAccess = 'allowed' | 'denied' | 'unavailable'
+export type ManagementAccess = 'allowed' | 'denied' | 'unavailable' | 'unsupported' | 'qqNotConfigured' | 'qqNotAuthorized'
+
+/** Explicit operator grants for the official QQ group API, not platform role claims. */
+export interface QQGroupManager {
+  selfId: string
+  groupId: string
+  userIds: string[]
+}
+
+export const qqIdentityPattern = /^[^\s*]+(?![\s\S])/
+const validQQIdentity = (value: unknown): value is string => typeof value === 'string' && qqIdentityPattern.test(value)
+
+function validQQGroupManager(value: unknown): value is QQGroupManager {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Partial<QQGroupManager>
+  return validQQIdentity(row.selfId) && validQQIdentity(row.groupId)
+    && Array.isArray(row.userIds) && row.userIds.length > 0 && row.userIds.every(validQQIdentity)
+}
+
+export function validateQQGroupManagers(value: unknown): asserts value is QQGroupManager[] {
+  if (!Array.isArray(value) || !value.every(validQQGroupManager)) {
+    throw new Error('Invalid qqGroupManagers: each entry requires exact selfId, groupId and non-empty userIds; whitespace and wildcards are not allowed')
+  }
+}
 
 function roleAccess(value: unknown, allowed: string[], ordinary: string[]): ManagementAccess {
   if (typeof value !== 'string') return 'unavailable'
@@ -14,13 +37,13 @@ function permissionBits(value: unknown): bigint | undefined {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return BigInt(value)
 }
 
-/** Platform identities are authoritative; Koishi authority and role display names cannot grant access. */
-export async function managementAccess(session: Session): Promise<ManagementAccess> {
+/** Platform roles or explicit QQ grants authorize access; Koishi authority and display names do not. */
+export async function managementAccess(session: Session, qqGroupManagers: readonly QQGroupManager[] = []): Promise<ManagementAccess> {
   if (session.isDirect) return 'allowed'
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
-      checkGroupAccess(session),
+      checkGroupAccess(session, qqGroupManagers),
       new Promise<ManagementAccess>(resolve => { timer = setTimeout(() => resolve('unavailable'), 15_000) }),
     ])
   } finally {
@@ -28,10 +51,20 @@ export async function managementAccess(session: Session): Promise<ManagementAcce
   }
 }
 
-async function checkGroupAccess(session: Session): Promise<ManagementAccess> {
+async function checkGroupAccess(session: Session, qqGroupManagers: readonly QQGroupManager[]): Promise<ManagementAccess> {
   const { guildId, userId, bot, platform } = session
   if (!guildId || !userId) return 'unavailable'
   try {
+    if (platform === 'qq') {
+      // Official QQ group events use the same group OpenID for guild and channel.
+      // Bind authorization to the actual destination and bot, never to a display name or QQ number.
+      if (!validQQIdentity(session.selfId) || !validQQIdentity(guildId) || !validQQIdentity(userId)
+        || session.channelId !== guildId) return 'unavailable'
+      const grants = qqGroupManagers.filter(row => validQQGroupManager(row)
+        && row.selfId === session.selfId && row.groupId === guildId)
+      if (!grants.length) return 'qqNotConfigured'
+      return grants.some(row => row.userIds.includes(userId)) ? 'allowed' : 'qqNotAuthorized'
+    }
     if (platform === 'onebot') {
       // OneBot maps the protocol's sender.role to the member's role ID.
       const member = session.event.member?.roles?.length ? session.event.member : await bot.getGuildMember(guildId, userId)
@@ -71,7 +104,7 @@ async function checkGroupAccess(session: Session): Promise<ManagementAccess> {
       return permissions & 8n ? 'allowed' : 'denied'
     }
     // Other adapters must supply a platform-specific check before group mutations are supported.
-    return 'unavailable'
+    return 'unsupported'
   } catch {
     return 'unavailable'
   }
