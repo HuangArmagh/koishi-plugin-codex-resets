@@ -16,11 +16,17 @@ Search for **codex-resets** in the Koishi Plugin Market, install it, then add an
 
 Send a command in the conversation that should receive notifications. Commands accept `/`, your instance prefix, or no prefix.
 
-| 中文指令 | English command | 功能 / Action |
-| --- | --- | --- |
-| `重置状态` | `reset-status` | 查询状态、最近 3 条历史和订阅信息 / Show status, the latest 3 resets and subscription details |
-| `重置订阅开启` | `reset-subscribe` | 开启当前会话的两类重置提醒 / Enable both types of reset alerts for this conversation |
-| `重置订阅关闭` | `reset-unsubscribe` | 关闭当前会话的重置提醒 / Disable reset alerts for this conversation |
+状态指令查询当前状态、最近 3 条历史和订阅信息；开启／关闭指令管理当前会话的两类重置提醒。
+
+The status command shows the current status, the latest 3 resets and subscription details. Subscribe/unsubscribe enables or disables both types of reset alerts for this conversation.
+
+| 语言 / Language | 状态 / Status | 开启订阅 / Subscribe | 关闭订阅 / Unsubscribe |
+| --- | --- | --- | --- |
+| English | `reset-status` | `reset-subscribe` | `reset-unsubscribe` |
+| 简体中文 | `重置状态` | `重置订阅开启` | `重置订阅关闭` |
+| 繁體中文 | `重置狀態` | `重置訂閱開啟` | `重置訂閱關閉` |
+| 日本語 | `リセット状況` | `リセット購読` | `リセット購読解除` |
+| 한국어 | `리셋상태` | `리셋구독` | `리셋구독취소` |
 
 所有用户可查询状态；群聊／频道的订阅开关仅限平台群主或管理员，私聊三条指令全部可用。群权限校验支持 **QQ（OneBot）、Telegram、Discord**，具体限制见[平台与权限](docs/platforms.md)。
 
