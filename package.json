@@ -1,6 +1,6 @@
 {
   "name": "koishi-plugin-codex-resets",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "通过会话指令订阅 Codex 重置预告和已执行重置提醒。",
   "repository": {
     "type": "git",
