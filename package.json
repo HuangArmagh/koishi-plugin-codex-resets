@@ -1,0 +1,70 @@
+{
+  "name": "koishi-plugin-codex-resets",
+  "version": "0.5.1",
+  "description": "通过会话指令订阅 Codex 重置预告和已执行重置提醒。",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "koishi",
+    "koishi-plugin",
+    "codex",
+    "codex-resets",
+    "subscription",
+    "reset",
+    "notification",
+    "推送",
+    "订阅"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check",
+    "pretest": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "check": "npm test"
+  },
+  "peerDependencies": {
+    "koishi": "^4.18.11"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "latest"
+  },
+  "devDependencies": {
+    "@koishijs/plugin-mock": "^2.6.6",
+    "@koishijs/plugin-sandbox": "3.4.2",
+    "@minatojs/driver-memory": "^3.7.0",
+    "@satorijs/adapter-telegram": "4.5.11",
+    "@types/node": "^22.0.0",
+    "koishi": "4.18.11",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  },
+  "koishi": {
+    "description": {
+      "zh": "仅向通过指令订阅的群聊和私聊推送 Codex 重置预告、已执行重置。",
+      "en": "Opt-in Codex reset announcements and executed-reset alerts for channels and private chats.",
+      "zh-TW": "僅向透過指令訂閱的群組和私訊推送 Codex 重置預告與已執行重置通知。",
+      "ja": "購読したグループと個別チャットに Codex のリセット予告と実行済みリセットを通知します。",
+      "ko": "명령으로 구독한 그룹 및 개인 채팅에 Codex 리셋 사전 공지와 실행된 리셋 알림을 보냅니다."
+    },
+    "service": {
+      "required": [
+        "database",
+        "http"
+      ]
+    }
+  }
+}
