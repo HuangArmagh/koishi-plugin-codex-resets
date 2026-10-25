@@ -90,7 +90,7 @@ npm install koishi-plugin-codex-resets@latest --registry https://registry.npmjs.
 
 从本地 `.tgz` 切换到注册表版本时，执行上面的命令（Yarn 实例使用对应的 `yarn add`），再重启 Koishi。订阅保存在数据库中，无需重新注册。
 
-维护者发布流程见 [发布与验证](docs/publishing.md)。
+维护者发布流程见 [发布与验证](docs/publishing.md)。日常本地提交与普通推送不改变版本号，也不创建标签、Release 或启动 CI。只有明确发布正式 GitHub Release 时，工作流才检查、构建并发布 npm。
 
 ### 从本地安装包安装
 

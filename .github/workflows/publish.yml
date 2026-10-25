@@ -1,0 +1,99 @@
+name: Publish npm package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'HuangArmagh/koishi-plugin-codex-resets' && !github.event.release.prerelease && !github.event.release.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
+      artifact-id: ${{ steps.archive.outputs.artifact-id }}
+    env:
+      RELEASE_DIR: ${{ runner.temp }}/codex-resets-release
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Validate release tag and package version
+        run: node scripts/release.mjs validate
+      - name: Install pinned npm CLI and dependencies
+        run: |
+          npm install --global npm@12.2.1 --ignore-scripts --no-audit --no-fund
+          npm ci --no-audit --no-fund
+      - name: Build and run all regression tests
+        run: npm run check
+      - name: Pack and audit distributable files
+        id: pack
+        run: npm run release:pack
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: archive
+        with:
+          name: npm-package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.RELEASE_DIR }}/*.tgz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      RELEASE_DIR: ${{ runner.temp }}/codex-resets-release
+      EXPECTED_SHA256: ${{ needs.build.outputs.sha256 }}
+      PACKAGE_VERSION: ${{ needs.build.outputs.version }}
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+      NPM_CONFIG_PROVENANCE: 'false'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install pinned npm CLI
+        run: npm install --global npm@12.2.1 --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          merge-multiple: true
+          path: ${{ env.RELEASE_DIR }}
+      - name: Verify release identity, artifact and registry state
+        id: preflight
+        run: |
+          node scripts/release.mjs validate
+          node scripts/release.mjs preflight
+      - name: Publish verified archive using npm trusted publishing
+        if: steps.preflight.outputs.exists == 'false'
+        run: npm publish "$RELEASE_DIR/koishi-plugin-codex-resets-$PACKAGE_VERSION.tgz" --ignore-scripts --access public --tag latest --registry https://registry.npmjs.org/
+      - name: Verify npm version, latest tag and archive digests
+        run: node scripts/release.mjs verify
+      - name: Attach the same archive to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release.mjs attach
