@@ -65,14 +65,7 @@ npm trust github koishi-plugin-codex-resets --repo HuangArmagh/koishi-plugin-cod
 
 ## 本地验证与手动备用发布
 
-```sh
-npm ci
-npm run check
-```
-
-修改 GitHub 工作流时，提交前还需运行 `actionlint .github/workflows/publish.yml`，检查表达式和上下文。仅能解析 YAML 不代表 GitHub 能执行该工作流。
-
-本地验证打包时，将环境变量 `RELEASE_DIR` 设置为一个新的临时目录，再运行 `npm run release:pack`。该命令只构建归档并检查内容，不修改版本、不发布网络内容。应先运行构建／测试；已有正式安装包不覆盖。
+构建、回归验证和本地测试包统一遵循[开发与本地打包](development.md)。先运行 `npm ci` 和 `npm run check`，再按对应系统的示例创建新的临时目录，设置 `RELEASE_DIR` 并运行 `npm run release:pack`。保留项目根目录的已有正式安装包，不用当前工作分支重新生成后替换已发布附件。
 
 只有维护者明确要求手动发布时，才使用下面的备用流程：
 

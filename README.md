@@ -1,181 +1,48 @@
 # koishi-plugin-codex-resets
 
-通过指令为当前群聊、频道或私聊订阅 Codex 重置通知。**只有明确订阅的会话才会收到主动推送**；一次订阅同时启用重置预告和已执行重置提醒。数据来自 `codex-resets.com` 的公开 API。
+为 Koishi 群聊、频道和私聊提供 Codex 重置通知。**只有通过指令订阅的会话才会收到重置预告和已执行重置提醒**；概率预测仅在状态查询中显示。数据来自 [Codex Resets](https://codex-resets.com)。
 
-支持 QQ（OneBot）、Telegram、Discord 的群管理员权限校验；其他适配器的能力边界见[平台与权限](docs/platforms.md)。
+Codex reset notifications for Koishi groups, channels and private chats. **Only subscribed conversations receive reset announcements and executed-reset alerts**; probability forecasts appear only in status queries. Data is provided by [Codex Resets](https://codex-resets.com).
 
-## 三条指令
+## 安装 / Installation
 
-在需要接收通知的会话中发送完整指令。支持 **`/` 前缀、无前缀和实例原有前缀**，例如 `/重置订阅开启`、`重置订阅开启`。消息中仅包含指令片段、引用指令或 @其他机器人的消息不会通过兼容入口触发。Koishi 的全局权限、会话过滤和别名过滤仍然生效；禁用或删除某个别名后，其无前缀和 `/` 形式也不再触发。
+在 Koishi 控制台的「插件市场」搜索 **codex-resets**，安装后在「插件配置」中添加并启用。需要 **Node.js ≥ 22.12、Koishi ^4.18.11**，以及可用的 `http` 服务和持久化数据库。
 
-| 简体中文指令 | 作用 | 群聊 / 频道权限 | 私聊权限 |
-| --- | --- | --- | --- |
-| `重置状态` | 优先显示待执行公告，其次有效预测，以及最近 3 条历史、会话订阅状态与推送语言 | 所有用户 | 所有用户 |
-| `重置订阅开启` | 开启当前会话订阅，接收重置预告和已执行重置提醒，保存指令语言 | 群主或管理员 | 所有用户 |
-| `重置订阅关闭` | 关闭当前会话订阅并清除待发送、待重试消息 | 群主或管理员 | 所有用户 |
+Search for **codex-resets** in the Koishi Plugin Market, install it, then add and enable it in Plugin Configuration. Requires **Node.js ≥ 22.12, Koishi ^4.18.11**, the `http` service and a persistent database.
 
-订阅成功只回复一条对应语言的确认信息，取消成功也只回复一条确认信息；**不会额外发送模拟通知或测试消息**。重复订阅会回复已订阅及当前语言，未订阅时取消会如实提示未订阅。首次轮询会按正常规则发送当前仍待执行的真实预告；概率预测只在状态查询中展示，即使为 100% 也不主动推送。
+## 使用 / Usage
 
-状态查询不会创建订阅、改变推送语言或消费通知记录。历史按公告／首次观察时间倒序显示，最多 3 条；该时间不一定是精确执行时间。状态或历史接口单独失败时，仍展示另一个接口的可用结果和本地订阅信息。
+在希望接收通知的会话中发送指令，可使用 `/`、实例前缀或不带前缀。
 
-状态使用精简文字模板，按顺序选择一个信号区：有 `scheduled_reset` 时显示待执行公告及其未确认执行提示；没有公告时才显示未过期的 `active_watch`，包含等级、概率和有效期；两者均不可用时显示“当前无有效重置预测。”。预定时间为空或已到不影响公告优先级，预测有效期等于当前时间则视为过期。历史只显示时间与类型，不重复展示最新一条、不显示引文和响应生成时间。整条消息统一标注一次时区；历史查询失败时保留状态接口中已知的最近重置。完整示例见[状态文案](docs/status-messages.md)。
+Send a command in the conversation that should receive notifications. Commands accept `/`, your instance prefix, or no prefix.
 
-指令不接受其他群号、用户 ID 或额外参数。普通群聊订阅由该群共享，Telegram 话题和 Discord 频道各自独立；私聊只属于当前用户。Telegram 话题按所属群与话题共同区分，不同群中相同编号的话题互不影响。推送只发送到执行订阅的会话。
-
-### 群管理员权限
-
-- QQ / OneBot：平台返回的 `owner` 或 `admin`。
-- Telegram：`creator` 或 `administrator`，通过平台接口查询。
-- Discord：服务器所有者或具有 `ADMINISTRATOR` 权限的成员。
-- 无法确认身份、接口失败或超时、尚未支持群权限校验的适配器：拒绝群聊订阅和取消，不改变已有订阅。状态查询和私聊指令仍可使用。
-
-本插件不设置最低 Koishi 用户等级；Koishi 等级 0 的用户也能查询或在私聊管理订阅。提高 Koishi 用户等级不会赋予群管理员身份。平台配置、原生斜杠指令及适配器限制见[平台与权限](docs/platforms.md)。
-
-## 语言
-
-支持 English、简体中文、繁體中文、日本語、한국어。指令回复、预告、已执行提醒和 Koishi 配置说明均提供五种语言。两类主动通知按标题、说明、时间信息、网站数据来源分块，块间留一空行；不显示网站公告原文、依据或原始来源链接。Discord 和 Telegram 保留最终消息限长保护；Discord 还会将原生提及转换为普通文字。
-
-| 语言 | 代码 | 状态 | 订阅 | 取消 | 显示时区 |
-| --- | --- | --- | --- | --- | --- |
-| English | `en-US` | `reset-status` | `reset-subscribe` | `reset-unsubscribe` | UTC |
-| 简体中文 | `zh-CN` | `重置状态` | `重置订阅开启` | `重置订阅关闭` | UTC+8 |
-| 繁體中文 | `zh-TW` | `重置狀態` | `重置訂閱開啟` | `重置訂閱關閉` | UTC+8 |
-| 日本語 | `ja-JP` | `リセット状況` | `リセット購読` | `リセット購読解除` | UTC+9 |
-| 한국어 | `ko-KR` | `리셋상태` | `리셋구독` | `리셋구독취소` | UTC+9 |
-
-以上指令均可加 `/`。默认 `locale: auto`：使用哪种语言的订阅指令，就为该会话保存哪种推送语言。换一种语言再次订阅时只更新语言，不改变订阅周期、不重放已经发送的事件，群聊仍要求管理员身份。查询回复跟随查询指令语言，但不会修改已保存的推送语言。
-
-简体中文使用 `重置订阅关闭`，繁体中文使用 `重置訂閱關閉`。自动模式按本次关闭指令的语言回复，即使订阅之前保存的是另一种语言；固定 `locale` 仍优先。两条指令都只关闭当前会话。
-
-原生斜杠指令名为 `codexresetstatus`、`codexresetsubscribe`、`codexresetunsubscribe`，均使用英语，适合 Telegram / Discord 的原生指令入口。保留 `codex-reset.status`、`codex-reset.subscribe`、`codex-reset.unsubscribe` 三个英语文本别名。原生指令没有消息正文时，也按实际执行的指令名识别语言。实例前缀与别名开头重合时，仍保留无前缀指令的语言。
-
-语言在数据库中保存，重启后保留。待发和重试的结构化通知在发送时使用当前语言。[五语言说明](docs/languages.md)提供各语言的使用说明。
-
-Koishi 配置中的 `locale` 提供自动模式及上述五种语言。选择固定语言后，所有会话的插件回复和推送统一使用该语言及其对应时区，优先于订阅指令；改回自动模式即可恢复各会话保存的语言。配置说明随 Koishi 控制台语言显示对应译文。
-
-时区自动跟随最终文案语言，不需要增加指令或参数。状态查询按查询回复的语言显示时间，主动推送按当前会话的推送语言显示时间。例如日语订阅后使用英语查询，查询显示 UTC，后续日语推送仍显示 UTC+9。状态消息统一标注一次 `UTC`、`UTC+08:00` 或 `UTC+09:00`，主动通知在时间旁标注，不受服务器／Docker 时区和夏令时影响。公告时间、历史记录、预定执行时间和预测有效期统一转换。
-
-API 日期时间字段按其携带的时区偏移解析；英语统一转换为 UTC，不采用太平洋时间。转换只改变显示，不改变事件时间、预测有效期、推送时机、去重和重试记录。
-
-API 时间必须通过严格校验，缺少时区或日期无效时拒绝使用，避免不同服务器将同一时间解释为不同事件。
-
-## 推送规则
-
-- **重置预告**：来自 `scheduled_reset`，表示网站记录了明确公告，仍待执行证据。新订阅首次检查推送当前预告；后续新预告按重置类型与 ID 去重。相同预告的文字或预定时间变化仅刷新未发送记录，保留重试次数和退避；已发送的不重复推送。预告消失、被新预告替代或确认执行时取消未发预告；重启后先用状态校验再恢复重试。预定时间可以为空，时间已到也不自动认定执行。
-- **概率预测**：`active_watch` 仅在状态查询中显示，不入主动推送队列，包括概率为 100% 的情况。
-- **已执行重置**：新订阅先使用注册后发起或重新验证的状态请求建立基线，默认不补发订阅前已有的重置。首次请求失败后恢复时，也会补齐订阅后发生的中间记录；首次补查未完成时继续重试，即使其他会话已经推进了全局检查点。待发记录全部写入成功后才保存初始化进度，写入中断后恢复补查并复用已入队的记录。建立基线后，新出现的已执行重置会推送，即使它保留了较早的原公告时间。消息区分常规重置和储备重置。
-- **后续执行跟踪**：预告通知和已执行通知使用不同事件标识。每个订阅会保存自己观察到的待执行公告；重启后继续补查，只有最新重置或历史接口确认执行后才推送，即使期间又出现了更新的重置。公告消失或预定时间已到都不代表执行完成。
-- **执行证据保留**：后台确认的执行标识独立持久化，优先于状态接口中残留的同一预告；通知尚未发送或当前订阅已取消也不会丢失证据。
-- **注册时执行基线**：新订阅记录注册前已确认的事件；这些事件即使再次出现在 `latest_reset` 或历史中，也不为该订阅周期生成已执行通知。基线随订阅持久化，语言变更不会重置。
-- 订阅、待执行公告跟踪、发送记录及 API 请求时间、退避截止时间保存在 Koishi 数据库，重启后继续使用。重复注册不会重复创建订阅，取消订阅后重新注册会开启新的订阅周期。
-- 没有订阅会话时，后台不会请求网站。手动状态查询仍可按需请求，并复用缓存。
-- 开启订阅会请求一次尽快检查；重复操作保留更早的待执行检查，不延后正常轮询。若检查正在进行，多次请求合并到完成后的一次检查，仍遵守网站请求间隔与退避。
-- 同一进程中的所有订阅共享 API 采集结果；发生新重置时，通过时间过滤和游标分页补查中间记录。需要补查时，起点同时覆盖已观察且尚未确认执行的公告原时间，即使该公告仍显示为当前预告；历史按公告时间筛选，不能只用订阅时间截断。稳定预告本身不会额外触发历史查询。单次最多补查 2000 条，异常时保留检查点并记录日志。
-- 发送失败按目标单独退避重试，所有批次共用发送间隔。轮询先校验状态及补查证据，再放行仍有效的预告；状态或必要历史校验失败、API 退避期间保留预告队列并暂停其发送，已执行重置仍可正常重试。最终订阅检查和提交发送与取消操作按顺序执行；取消订阅确认后，不再提交该订阅周期的排队消息。已经进入适配器发送流程的消息无法撤回，但等待适配器返回不会阻塞取消订阅。
-- 单次适配器调用等待超过 30 秒后，继续处理其他会话及后续轮询；同一会话暂停提交后续消息，直到原调用真正返回。超时只结束等待，不会把结果未知的调用当作失败重发。迟到成功写入发送记录，迟到失败按正常退避重试；已读队列在发送前重新校验，避免迟到结果造成重复。此跟踪仅在当前进程内有效，重载或重启不能撤回平台已收到的请求；平台已接收但确认丢失等异常情况下，重试仍可能导致重复消息。
-
-## 安装与更新
-
-Linux / Docker 的安装和 QQ 验收流程见 [Docker 与 QQ 实测步骤](docs/docker-qq-testing.md)，Telegram、Discord 的接入要求见[平台与权限](docs/platforms.md)。
-
-需要 Node.js 22.12 或以上、Koishi 4.18.11 或兼容版本，以及可用的 `database`、`http` 服务。数据库请使用持久化驱动，例如 SQLite、MySQL 或 PostgreSQL；测试使用的内存驱动不会保留重启前的数据。
-
-发布到 npm 并被 Koishi 市场收录后，在控制台“插件市场”搜索 **codex-resets**，安装后在“插件配置”中添加并启用 `codex-resets`；后续版本可通过市场更新。首次发布后的索引收录可能需要等待，是否已公开发布请以 npm 注册表查询结果为准。[Koishi 发布说明](https://koishi.chat/zh-CN/guide/develop/publish)
-
-也可以在 **Koishi 实例目录** 使用现有包管理器安装注册表版本，例如：
-
-```sh
-npm install koishi-plugin-codex-resets@latest --registry https://registry.npmjs.org/
-```
-
-从本地 `.tgz` 切换到注册表版本时，执行上面的命令（Yarn 实例使用对应的 `yarn add`），再重启 Koishi。订阅保存在数据库中，无需重新注册。
-
-维护者发布流程见 [发布与验证](docs/publishing.md)。日常本地提交与普通推送不改变版本号，也不创建标签、Release 或启动 CI。只有明确发布正式 GitHub Release 时，工作流才检查、构建并发布 npm。
-
-### 从本地安装包安装
-
-在本插件项目目录构建安装包：
-
-```sh
-npm ci
-npm test
-npm pack
-```
-
-在 **Koishi 实例目录** 安装生成的本地包，例如：
-
-```sh
-npm install /path/to/koishi-plugin-codex-resets-0.5.1.tgz
-```
-
-然后在 Koishi 控制台添加并启用 `codex-resets` 插件。本地安装包也可用于公开发布前的测试。
-
-配置示例（数据库和机器人适配器应已单独配置）：
-
-```yaml
-plugins:
-  codex-resets:
-    locale: auto
-    pollIntervalMs: 300000
-    requestTimeoutMs: 15000
-    sendIntervalMs: 1000
-```
-
-| 配置 | 默认值 | 说明 |
+| 中文指令 | English command | 功能 / Action |
 | --- | --- | --- |
-| `locale` | `auto` | 自动跟随订阅指令语言，或统一指定 `en-US` / `zh-CN` / `zh-TW` / `ja-JP` / `ko-KR` |
-| `pollIntervalMs` | `300000` | 检查间隔，单位毫秒，最短 60 秒 |
-| `requestTimeoutMs` | `15000` | 单次 API 请求超时 |
-| `sendIntervalMs` | `1000` | 任意两次主动发送的最小间隔，跨批次生效 |
+| `重置状态` | `reset-status` | 查询状态、最近 3 条历史和订阅信息 / Show status, the latest 3 resets and subscription details |
+| `重置订阅开启` | `reset-subscribe` | 开启当前会话的两类重置提醒 / Enable both types of reset alerts for this conversation |
+| `重置订阅关闭` | `reset-unsubscribe` | 关闭当前会话的重置提醒 / Disable reset alerts for this conversation |
 
-平台和适配器需要支持主动发送；私聊还需要支持创建私聊频道。未连接实际机器人前，不能确认特定平台的主动发送权限。
+所有用户可查询状态；群聊／频道的订阅开关仅限平台群主或管理员，私聊三条指令全部可用。群权限校验支持 **QQ（OneBot）、Telegram、Discord**，具体限制见[平台与权限](docs/platforms.md)。
 
-## 数据来源与 API
+Anyone can query status. Only platform group owners or administrators can manage group/channel subscriptions; all three commands are available in private chats. Group permission checks support **QQ (OneBot), Telegram and Discord**; see [platform requirements](docs/platforms.md).
 
-数据来源：[Codex Resets](https://codex-resets.com)。所有状态查询和主动推送都保留网站数据来源链接，以满足网站的署名要求。
+支持 **English、简体中文、繁體中文、日本語、한국어**。默认按订阅指令保存推送语言，也可在配置中固定语言。简繁中文使用 UTC+8，日语和韩语使用 UTC+9，英语使用 UTC。
 
-- [API 文档](https://codex-resets.com/api/docs)
-- [OpenAPI 规范](https://codex-resets.com/api/openapi.json)
-- `GET /api/v1/status`：已执行重置、待执行公告、有效预测、统计信息。
-- `GET /api/v1/resets?limit=3&order=desc`：状态指令展示最近 3 条历史；缓存与状态查询一样按检查间隔复用，发现最新重置变化时刷新。
-- `GET /api/v1/resets`：后台使用 `from`、`limit`、`order=asc`、`cursor` 分页补查中间记录，与交互查询共用串行请求和退避机制。
+Supports **English, Simplified Chinese, Traditional Chinese, Japanese and Korean**. By default, the subscription command selects the notification language; configuration can override it. Times use UTC+8 for Chinese, UTC+9 for Japanese/Korean, and UTC for English.
 
-接口免费、无需 API Key。插件使用固定官方站点地址，不访问用户的 OpenAI 账号，也不查询个人剩余额度。
+## 文档 / Documentation
 
-API 枚举字段必须使用字符串：`reset_type` 为 `regular` 或 `banked`，`source.type` 为 `x_post` 或 `observed`，`active_watch.level` 为 `elevated` 或 `strong`。例如 `["banked"]` 不会转换成 `banked`；状态及历史接口均拒绝此类异常响应，不据此缓存或生成通知，并按共享退避规则重试。
+| 文档 / Guide | 内容 / Contents |
+| --- | --- |
+| [使用与配置 / Usage and configuration](docs/usage.md) | 安装更新、指令与配置项 / Installation, updates, commands and settings |
+| [语言指南 / Languages](docs/languages.md) | 五语言指令、语言切换与时区 / Commands in all five languages, language selection and time zones |
+| [平台与权限 / Platforms and permissions](docs/platforms.md) | QQ、Telegram、Discord 与沙盒 / QQ, Telegram, Discord and sandbox requirements |
+| [推送规则 / Notification behavior](docs/notifications.md) | 基线、去重、持久化与重试 / Baselines, deduplication, persistence and retries |
+| [状态文案 / Status messages](docs/status-messages.md) | 查询结果示例 / Status response examples |
+| [主动推送文案 / Notification messages](docs/notification-messages.md) | 预告、执行与订阅确认 / Announcements, executed resets and subscription confirmations |
+| [Docker / QQ 验收 / Docker and QQ testing](docs/docker-qq-testing.md) | 部署与实际会话测试 / Deployment and conversation testing |
+| [API 与故障恢复 / API and recovery](docs/api.md) | 接口、时间校验、限流与请求恢复 / Endpoints, timestamps, rate limits and request recovery |
+| [开发与打包 / Development and packaging](docs/development.md) | 回归测试与临时目录打包 / Regression tests and packaging in a temporary directory |
+| [发布与验证 / Publishing and verification](docs/publishing.md) | GitHub Release → npm 流程 / GitHub Release → npm workflow |
 
-### API 时间校验
-
-时间字段采用带明确时区的 [RFC 3339 日期时间格式](https://www.rfc-editor.org/rfc/rfc3339#section-5.6)：完整的四位年份、月、日、时、分、秒，以及 `Z` 或 `±HH:MM`。例如 `2026-10-25T06:06:16.123Z` 与 `2026-10-25T14:06:16.123+08:00` 表示同一时刻。支持小数秒、小写 `t` / `z`，并检查真实公历日期、闰年、时分秒和偏移范围。
-
-拒绝缺少时区的 `2026-10-25T06:06:16`、纯日期、`2026-02-30T00:00:00Z` 等无效日期，以及 `24:00:00`、非法偏移和额外空白。JavaScript 日期无法表示的闰秒 `:60` 也会拒绝，不猜测时区或将错误日期自动顺延。接口允许的待执行时间、统计最后重置时间为 `null` 时仍可正常处理。
-
-状态接口、最近三条历史与后台补查共用校验。异常时间不会进入状态／历史缓存，不用于建立订阅基线或生成通知；请求失败按原有共享退避机制重试。历史补查失败时保留检查点，已有正常数据仍按原规则处理。日志提示 API 状态字段或历史响应格式不符合规范时，应检查上游响应；修改服务器时区无法修复这类数据。
-
-请求在进程内串行执行，按实际发起 HTTP 请求的时间保证至少 5 秒间隔，数据库写入耗时不会抵消这个间隔。使用 ETag 条件请求和标准缓存再验证；新订阅遇到注册前的缓存时会重新验证，同样遵守请求间隔与退避。收到 `429` 时暂停请求并遵守 `Retry-After`，服务异常或网络失败时指数退避。请求时间和退避截止时间写入数据库；重启或重载后恢复已有请求状态时，至少等待 5 秒，并继续遵守更长的退避期限。数据库无法读取或保存请求状态时不发起新的上游请求。文档没有公布具体次数配额。
-
-每次请求前还会保存未完成标记，结果和退避状态写入成功后才清除。结果写入失败时，原进程会在后续轮询中重试保存，即使仍处于上游退避期也会补存，不会为此请求网站。如果进程中断后只留下未完成标记，插件无法知道丢失响应中的限流期限，因此保持网站请求暂停，等待管理员确认后恢复；不会以固定 5 秒或 1 小时替代未知期限。
-
-业务去重使用事件类型、事件标识和订阅周期，不使用 ETag 或 `meta.generated_at`：实测业务数据相同也可能更新这两个字段。轮询间隔、上游采集和共享缓存都会影响提醒时效。该公开规范没有 Webhook 或实时流接口。
-
-### API 请求状态恢复
-
-若只是暂时写库失败且原进程仍在运行，先修复数据库连接并等待下一次轮询自动补存。无需清空请求状态，也无需取消订阅。
-
-重启后日志若提示“数据库中存在未完成的 API 请求”，说明请求结果或限流期限没有可靠保存。请求发送期间中断也可能触发此保护。按以下步骤处理：
-
-1. 停用 `codex-resets` 插件，确认数据库可正常读写并备份数据库。
-2. 检查中断前的日志和数据源限流状态。日志若包含“退避截止时间戳（毫秒）”，保留该值；无法确认允许恢复的时间时，保持暂停并向数据源核实。
-3. 使用数据库管理工具检查 `codex_reset_api_state` 表中 `id = global` 的记录。确认恢复期限后，将 `blockedUntil` 设置为已确认截止时间与原有值中的较大值，再将 `requestPending` 改为 `false`；保留 `lastRequestAt`、`failures` 和其他表的数据。不要删除整条请求状态或直接把退避时间清零。
-4. 重新启用插件。插件会继续遵守保存的截止时间和至少 5 秒的请求间隔；可以用 `重置状态` 检查恢复结果。
-
-此保护只暂停网站采集；订阅和取消仍可使用，状态指令会保留本地订阅信息。
-
-## 开发与验证
-
-```sh
-npm ci
-npm run check
-```
-
-测试不访问真实 API、不发送真实聊天消息，覆盖会话隔离、显式订阅、缓存基线、预告与执行提醒、待执行公告恢复、分页补查、数据库去重、取消与发送并发、旧预告撤销、重试、单条成功回复、五语言与原生指令、QQ / Telegram / Discord 权限、Telegram 话题隔离与发送路由、持久化数据恢复、最近三条历史缓存、严格时间校验、预告去重、Discord 五语言限长与原生提及处理、精简状态模板、官方沙盒 CONNECT 投递、官方 Telegram 编码器限长与重试、跨服务器时区一致性、请求间隔、限流状态写入失败和恢复、Koishi 指令集成。平台权限回归使用符合官方适配器接口的数据模拟，未连接实际 QQ、Telegram 或 Discord 账号；实际收发还需在你的部署中验证。运行 Koishi 时请仅启用一个采集实例；多个进程共享数据库时尚未提供分布式投递锁。
+[MIT License](LICENSE)

@@ -79,3 +79,13 @@ With `locale: auto`, the subscription command selects and saves the notification
 Native slash commands are `codexresetstatus`, `codexresetsubscribe` and `codexresetunsubscribe`; all select English. Text aliases `codex-reset.status`, `codex-reset.subscribe` and `codex-reset.unsubscribe` also select English. All entry points respect Koishi command permissions and alias filters.
 
 两类主动通知按标题、说明、时间信息、网站数据来源分块，块间留一空行。参见[状态文案](status-messages.md)、[主动推送文案](notification-messages.md)、[平台与权限](platforms.md)及 [Docker / QQ 验收步骤](docker-qq-testing.md)。
+
+## 时区与显示细节 / Time zones
+
+时区跟随最终文案语言，无需增加指令或参数。例如日语订阅后使用英语查询，查询显示 UTC，后续日语推送仍显示 UTC+9。状态消息统一标注一次时区，主动通知在时间旁标注；公告时间、历史记录、预定时间和预测有效期均按此转换，不受服务器／Docker 时区和夏令时影响。
+
+API 日期时间字段按其携带的偏移解析；英语统一转换为 UTC，不采用太平洋时间。转换只改变显示，不改变事件时间、预测有效期、去重或重试记录。时间格式的严格校验和异常处理见 [API 时间校验](api.md#api-时间校验)。
+
+Time zones follow the final message language. For example, after subscribing in Japanese, an English status query uses UTC while subsequent Japanese notifications still use UTC+9. Formatting does not change event timing, expiry, deduplication or retries, and does not depend on the server time zone or daylight saving time.
+
+原生指令没有消息正文时，仍按实际执行的指令名识别语言；实例前缀与别名开头重合时，也保留无前缀指令的语言。配置说明随 Koishi 控制台语言显示对应译文。
