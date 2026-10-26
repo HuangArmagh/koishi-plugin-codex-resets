@@ -12,6 +12,8 @@ export function scheduledKey(reset: ScheduledReset): string {
   return `scheduled:${reset.reset_type}:${reset.id}`
 }
 
+export type SubmitDelivery = (submit: (target: Subscription, content: string) => Promise<void>) => Promise<{ completion: Promise<void> } | undefined>
+
 export class Monitor {
   private readonly mutations = new Serial()
   private pollTask?: Promise<void>
@@ -24,7 +26,7 @@ export class Monitor {
   constructor(
     private readonly store: Store,
     private readonly api: Api,
-    private readonly send: (target: Subscription, content: string) => Promise<void>,
+    private readonly send: (target: Subscription, content: string, submitCurrent: SubmitDelivery) => Promise<void | boolean>,
     private readonly options: {
       sendDelayMs: number
       signal: AbortSignal
@@ -249,47 +251,25 @@ export class Monitor {
       if (delay > 0) await this.clock.sleep(delay, this.options.signal)
       const attempt = await this.mutations.run(async () => {
         if (this.inFlight.has(delivery.subscriptionId)) return
-        // A late adapter result may have settled since this batch was read.
-        const currentDelivery = await this.store.delivery(delivery.id)
-        if (!currentDelivery || currentDelivery.sentAt || currentDelivery.retryAt > this.clock.now()) return
-        delivery = currentDelivery
-        // Membership validation and adapter submission must be ordered with cancellation.
-        const subscription = await this.store.subscription(delivery.subscriptionId)
-        if (!subscription || subscription.generation !== delivery.generation) {
-          await this.store.deleteDelivery(delivery.id)
-          return
-        }
-        this.options.signal.throwIfAborted()
-        const locale = this.localeFor(subscription)
-        let content = delivery.payload ? formatNotification(delivery.payload, locale, subscription.platform) : delivery.content
-        let expiresAt = delivery.expiresAt
-        if (delivery.kind === 'scheduled' || delivery.eventKey.startsWith('scheduled:')) {
-          // Hold restored announcements until a successful snapshot validates them.
-          const current = this.activeScheduled
-          if ((this.api.retryAt ?? 0) > this.clock.now()) {
-            this.invalidateAnnouncements()
-            return
-          }
-          if (current === undefined) return
-          if (!current || delivery.eventKey !== current.key) {
-            await this.store.deleteDelivery(delivery.id)
-            return
-          }
-          // Reformat current details even if a concurrent poll updated an already-read batch.
-          content = formatScheduled(current.value, locale, subscription.platform)
-          // A scheduled time passing never implies execution or expiry of an announcement.
-          expiresAt = 0
-        }
-        if (expiresAt > 0 && expiresAt <= this.clock.now()) {
-          await this.store.deleteDelivery(delivery.id)
-          return
-        }
+        const prepared = await this.prepareDelivery(delivery.id)
+        if (!prepared) return
+        const { subscription, content } = prepared
+        delivery = prepared.delivery
+        // QQ may wait before submitting or retry without a URL. Re-enter this same
+        // lock at the actual submission, refreshing the delivery, language and signal.
+        const submitCurrent: SubmitDelivery = submit => this.mutations.run(async () => {
+          const current = await this.prepareDelivery(delivery.id)
+          if (!current) return
+          const completion = submit(current.subscription, current.content)
+          void completion.catch(() => undefined)
+          return { completion }
+        })
         this.lastSentAt = this.clock.now()
         // Submit inside the lock, but wait outside it so a slow adapter cannot block cancellation.
         // Attach the rejection handler immediately, including for synchronous adapter errors.
         const completion = (async () => {
           try {
-            await this.send(subscription, content)
+            if (await this.send(subscription, content, submitCurrent) === false) return
             await this.mutations.run(async () => {
               if (!this.options.signal.aborted) await this.store.updateDelivery(delivery.id, { sentAt: this.clock.now() })
             })
@@ -312,6 +292,42 @@ export class Monitor {
       if (!attempt) continue
       await this.waitForDelivery(attempt.completion)
     }
+  }
+
+  // Call only while holding mutations: validation and submission must precede a
+  // successful cancellation together, even when a database read is delayed.
+  private async prepareDelivery(id: string) {
+    const delivery = await this.store.delivery(id)
+    if (!delivery || delivery.sentAt || delivery.retryAt > this.clock.now()) return
+    const subscription = await this.store.subscription(delivery.subscriptionId)
+    if (!subscription || subscription.generation !== delivery.generation) {
+      await this.store.deleteDelivery(id)
+      return
+    }
+    this.options.signal.throwIfAborted()
+    const locale = this.localeFor(subscription)
+    let content = delivery.payload ? formatNotification(delivery.payload, locale, subscription.platform) : delivery.content
+    let expiresAt = delivery.expiresAt
+    if (delivery.kind === 'scheduled' || delivery.eventKey.startsWith('scheduled:')) {
+      const current = this.activeScheduled
+      if ((this.api.retryAt ?? 0) > this.clock.now()) {
+        this.invalidateAnnouncements()
+        return
+      }
+      if (current === undefined) return
+      if (!current || delivery.eventKey !== current.key) {
+        await this.store.deleteDelivery(id)
+        return
+      }
+      content = formatScheduled(current.value, locale, subscription.platform)
+      // A scheduled time passing never implies execution or expiry.
+      expiresAt = 0
+    }
+    if (expiresAt > 0 && expiresAt <= this.clock.now()) {
+      await this.store.deleteDelivery(id)
+      return
+    }
+    return { delivery, subscription, content }
   }
 
   private waitForDelivery(completion: Promise<void>): Promise<void> {

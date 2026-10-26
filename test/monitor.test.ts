@@ -18,6 +18,30 @@ function setup(initial = status()) {
 }
 
 describe('explicit conversation subscriptions', () => {
+  it.each(['refresh', 'backoff'])('revalidates a delayed submission after announcement %s', async condition => {
+    const store = new MemoryStore(), clock = makeClock(), { api } = makeApi(status({ scheduled_reset: scheduled() }))
+    let release!: () => void, entered!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    const waiting = new Promise<void>(resolve => { entered = resolve })
+    const submitted = vi.fn(async () => {})
+    const monitor = new Monitor(store, api, async (_target, _content, submitCurrent) => {
+      entered()
+      await held
+      const pending = await submitCurrent(submitted)
+      if (!pending) return false
+      await pending.completion
+    }, { clock, sendDelayMs: 1000, signal: new AbortController().signal, report: vi.fn() })
+    await monitor.subscribe(target())
+    const polling = monitor.poll()
+    await waiting
+    if (condition === 'refresh') monitor.invalidateAnnouncements()
+    else Object.defineProperty(api, 'retryAt', { value: clock.now() + 60_000 })
+    release()
+    await polling
+    expect(submitted).not.toHaveBeenCalled()
+    expect(await store.pending(clock.now())).toEqual([expect.objectContaining({ sentAt: 0, attempts: 0 })])
+  })
+
   it('discards queued legacy diagnostic messages on upgrade without changing real notifications', async () => {
     const { monitor, store, send } = setup()
     await monitor.subscribe(target())

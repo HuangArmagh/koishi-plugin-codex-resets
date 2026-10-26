@@ -35,9 +35,9 @@ npm trust github koishi-plugin-codex-resets --repo HuangArmagh/koishi-plugin-cod
 
 ## 发布一个新版本
 
-1. 明确选择尚未使用的正式版本号，更新 `package.json` 和锁文件。例如 `npm version 0.5.3 --no-git-tag-version`；此命令只在决定发版时运行。
+1. 明确选择尚未使用的正式版本号，更新 `package.json` 和锁文件。例如 `npm version 0.5.4 --no-git-tag-version`；此命令只在决定发版时运行。
 2. 完成修改、运行 `npm run check`，本地提交并按指令推送。
-3. 在该提交上创建对应标签，例如 `v0.5.3`，推送标签，并正式发布 GitHub Release。标签必须与包版本完全一致。
+3. 在该提交上创建对应标签，例如 `v0.5.4`，推送标签，并正式发布 GitHub Release。标签必须与包版本完全一致。
 4. 查看 GitHub Actions 中的 `Publish npm package`。工作流将按下述顺序执行。
 
 不要重复发布已经存在的版本。现有 Release 的源代码和安装包均以其标签为准；工作分支可以继续提交配置与功能改动，只有下一次明确发版才递增版本号。

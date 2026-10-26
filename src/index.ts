@@ -73,7 +73,7 @@ export function apply(ctx: Context, input: Partial<Config> = {}): void {
     return { status: response.status, headers: response.headers, body }
   }, { cacheMs: config.pollIntervalMs, signal: controller.signal, stateStore: store })
 
-  const monitor = new Monitor(store, api, async (target, content) => {
+  const monitor = new Monitor(store, api, async (target, content, submitCurrent) => {
     const bot = ctx.bots.find(bot => bot.platform === target.platform && bot.selfId === target.selfId)
     // The official console sandbox has no network login and stays in CONNECT.
     const sandboxReady = bot?.adapterName === 'sandbox' && bot.hidden
@@ -90,33 +90,35 @@ export function apply(ctx: Context, input: Partial<Config> = {}): void {
     }) : undefined
     // Satori's private helper retains only the channel ID from createDirectChannel.
     // QQ's encoder needs the DIRECT session to select its private API endpoint.
-    const send = async (value: string) => {
-      const message = h.text(messageContent(value, target.platform))
-      const submit = () => target.type === 'private'
-        ? bot.sendPrivateMessage(target.targetId, message, target.guildId || undefined, session ? { session } : undefined)
-        : bot.sendMessage(target.targetId, message, undefined, session ? { session } : undefined)
+    const send = async (withoutUrl = false) => {
+      const submit = async (_target: typeof target, value: string) => {
+        const message = h.text(messageContent(withoutUrl ? value.replaceAll('https://codex-resets.com', 'Codex Resets') : value, target.platform))
+        const ids = target.type === 'private'
+          ? await bot.sendPrivateMessage(target.targetId, message, target.guildId || undefined, session ? { session } : undefined)
+          : await bot.sendMessage(target.targetId, message, undefined, session ? { session } : undefined)
+        if (!ids?.length) throw new Error('适配器没有返回成功发送的消息 ID')
+      }
       const pending = target.platform === 'qq' ? await qqSendSlots.run(async () => {
         // Include URL fallbacks in the same pacing budget: <=20 requests/minute.
         const delay = Math.max(config.sendIntervalMs, 3100) - (clock.now() - lastQQSentAt)
         if (delay > 0) await clock.sleep(delay, controller.signal)
         controller.signal.throwIfAborted()
-        const current = await store.subscription(target.id)
-        if (!current || current.generation !== target.generation) throw new Error('订阅已变更，取消排队发送')
-        lastQQSentAt = clock.now()
-        const completion = submit()
-        // Reserve submission order only; a slow HTTP call must not hold this lock.
-        void completion.catch(() => undefined)
-        return { completion }
-      }) : { completion: submit() }
-      const ids = await pending.completion
-      if (!ids?.length) throw new Error('适配器没有返回成功发送的消息 ID')
+        return submitCurrent((current, value) => {
+          lastQQSentAt = clock.now()
+          return submit(current, value)
+        })
+      }) : { completion: submit(target, content) }
+      if (!pending) return false
+      // Release both submission locks before waiting for the HTTP outcome.
+      await pending.completion
+      return true
     }
-    try { await send(content) }
+    try { return await send() }
     catch (error) {
       // Preserve URLs normally. Only a concrete QQ URL rejection allows this fallback.
       if (target.platform !== 'qq' || !hasResponseCode(error, 40054010) || !content.includes('https://codex-resets.com')) throw error
       logger.warn('QQ 主动消息拒绝 URL，将保留来源名称重试一次：%s', errorText(error))
-      await send(content.replaceAll('https://codex-resets.com', 'Codex Resets'))
+      return send(true)
     }
   }, {
     locale: config.locale, sendDelayMs: config.sendIntervalMs, signal: controller.signal,

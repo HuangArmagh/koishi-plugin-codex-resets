@@ -46,7 +46,7 @@ class QQFixture extends Bot {
   getGuildMember(group: string, id: string) { return QQBot.prototype.getGuildMember.call(this as never, group, id) }
 }
 
-async function setup(locale: typeof locales[number] = 'en-US', sendIntervalMs = 1000) {
+async function setup(locale: typeof locales[number] | 'auto' = 'en-US', sendIntervalMs = 1000) {
   vi.useFakeTimers({ now: NOW })
   const app = new App()
   apps.push(app)
@@ -231,6 +231,67 @@ describe('published QQ adapter integration', () => {
     expect(endpoint).toHaveBeenCalledTimes(1)
     expect(await store.subscriptions()).toHaveLength(0)
     expect(bot.wire).toHaveLength(0)
+  })
+
+  it.each([true, false])('orders a slow final subscription read with cancellation (private=%s)', async direct => {
+    const { bot } = await setup()
+    const session = await incoming(bot, direct, 'admin')
+    await session.execute({ name: 'codexresetsubscribe', args: [] }, true)
+    const originalRead = KoishiStore.prototype.subscription
+    let reads = 0, release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    vi.spyOn(KoishiStore.prototype, 'subscription').mockImplementation(async function (id) {
+      const result = await originalRead.call(this, id)
+      if (++reads === 2) await held // The final read immediately before QQ submission.
+      return result
+    })
+    const order: string[] = []
+    const endpoint = direct ? bot.internal.sendPrivateMessage : bot.internal.sendMessage
+    const originalSend = endpoint.getMockImplementation()!
+    endpoint.mockImplementation(async (id, data) => { order.push('send'); return originalSend(id, data) })
+    await vi.advanceTimersByTimeAsync(1000)
+    const cancelled = session.execute({ name: 'codexresetunsubscribe', args: [] }, true).then(() => { order.push('cancelled') })
+    await vi.advanceTimersByTimeAsync(0)
+    release()
+    await vi.advanceTimersByTimeAsync(0)
+    await cancelled
+    expect(order).not.toEqual(['cancelled', 'send'])
+    expect(order).toContain('cancelled')
+  })
+
+  it('does not submit a removed announcement after waiting for its URL fallback', async () => {
+    const { bot, store } = await setup()
+    await (await incoming(bot, false, 'admin')).execute({ name: 'codexresetsubscribe', args: [] }, true)
+    vi.mocked(require('../lib/util').clock.sleep).mockImplementation(ms => new Promise(resolve => setTimeout(resolve, ms)))
+    vi.spyOn(bot.http, 'isError').mockReturnValue(true)
+    bot.internal.sendMessage.mockRejectedValueOnce(Object.assign(new Error(), {
+      response: { status: 400, data: { code: 40054010, message: 'URL not allowed' } },
+    }))
+    await vi.advanceTimersByTimeAsync(1000)
+    await store.cancelScheduledExcept(null)
+    await vi.advanceTimersByTimeAsync(3100)
+    expect(bot.internal.sendMessage).toHaveBeenCalledTimes(1)
+    expect(bot.wire).toHaveLength(0)
+  })
+
+  it('uses the current subscription language when a paced fallback is finally submitted', async () => {
+    const { bot } = await setup('auto')
+    const session = await incoming(bot, true)
+    await session.execute({ name: 'codexresetsubscribe', args: [] }, true)
+    vi.mocked(require('../lib/util').clock.sleep).mockImplementation(ms => new Promise(resolve => setTimeout(resolve, ms)))
+    vi.spyOn(bot.http, 'isError').mockReturnValue(true)
+    bot.internal.sendPrivateMessage.mockRejectedValueOnce(Object.assign(new Error(), {
+      response: { status: 400, data: { code: 40054010, message: 'URL not allowed' } },
+    }))
+    await vi.advanceTimersByTimeAsync(1000)
+    const japanese = await incoming(bot, true)
+    japanese.content = 'リセット購読'
+    await japanese.execute({ name: 'codexresetsubscribe', args: [] }, true)
+    await vi.advanceTimersByTimeAsync(3100)
+    expect(bot.wire).toHaveLength(1)
+    expect(bot.wire[0]!.data.content).toContain(text('ja-JP', 'scheduledTitle'))
+    expect(bot.wire[0]!.data.content).toContain('UTC+09:00')
+    expect(bot.wire[0]!.data.content).not.toContain(text('zh-CN', 'scheduledTitle'))
   })
 
   it.each(locales.flatMap(locale => [true, false].map(direct => ({ locale, direct }))))(
