@@ -48,7 +48,7 @@ plugins:
 | `locale` | `auto` | 自动跟随订阅指令语言，或统一指定 `en-US` / `zh-CN` / `zh-TW` / `ja-JP` / `ko-KR` |
 | `pollIntervalMs` | `300000` | 检查间隔，单位毫秒，最短 60 秒 |
 | `requestTimeoutMs` | `15000` | 单次 API 请求超时 |
-| `sendIntervalMs` | `1000` | 任意两次主动发送的最小间隔，跨批次生效 |
+| `sendIntervalMs` | `1000` | 主动发送的最小间隔，跨批次生效；QQ 官方适配器实际使用至少 `3100` 毫秒，包含 URL 降级重试 |
 | `qqGroupManagers` | `[]` | QQ 官方群角色不可用时的备用授权，精确绑定登录机器人 ID（非 AppID）、群 OpenID 和用户 OpenID；留空仅校验平台角色，已确认的普通成员仍拒绝。配置本身不订阅。见[配置步骤](platforms.md#qq-官方适配器) |
 
 平台和适配器需要支持主动发送；私聊还需要支持创建私聊频道。未连接实际机器人前，不能确认特定平台的主动发送权限。

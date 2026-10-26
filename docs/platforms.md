@@ -47,6 +47,14 @@ qqGroupManagers:
 
 私聊主动通知明确携带 `DIRECT` 会话类型，调用 QQ 私聊消息接口；群通知调用群消息接口。两类通知及失败重试遵守相同路由，不借用旧消息 ID 伪装成被动回复。订阅成功只确认订阅写入，实际主动发送仍受 QQ 官方消息策略、机器人资质和发送权限限制，应在实际群聊和私聊中验证。
 
+WebSocket 用于接收事件，发送消息由适配器调用 HTTP API：私聊 `POST /v2/users/{user_openid}/messages`，群聊 `POST /v2/groups/{group_openid}/messages`。无需另开 HTTP 接收服务或在插件配置中填写第二份凭证。主动文本通知使用 `msg_type: 0` 和 `content`，不携带 `msg_id`、`event_id`、`msg_seq`，也不切换为 `is_wakeup` 互动召回。指令回复成功只证明对应回复可发送，不能证明主动消息权限已开放。[消息收发概述](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html)、[单聊发送接口](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_messages.post.html)、[群聊发送接口](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.html)。
+
+本插件的 QQ 主动发送提交间隔至少为 `max(sendIntervalMs, 3100)` 毫秒，私聊、群聊、失败重试及 URL 降级重试共用发送节奏，按官方每个接收方每分钟 20 条及未认证机器人每分钟 30 条的限制保守发送。该限制不统计其他插件发送或适配器内部自动重试，也不替代 QQ 每日配额和用户客户端“允许主动发送”开关。使用较长的配置间隔时按配置执行；等待期间取消订阅会阻止尚未提交的消息。
+
+状态回复和正常主动通知均保留数据来源 URL。只有 QQ 主动发送明确返回 `40054010`（不允许发送 URL）时，本次通知才把来源链接替换成 `Codex Resets` 后再尝试一次；记录原始错误摘要，保留语言、时间和消息类型。若再次失败，保留待发送记录，按正常退避重试。权限不足、频控及网络错误不会触发 URL 降级，不以状态回复中的链接能否显示来猜测主动消息失败原因。
+
+Official QQ receives events over WebSocket and sends both replies and proactive notifications through the adapter's HTTP API. No second credential or HTTP receiver configuration is needed. Proactive sends use the correct private/group route without reply IDs or wake-up flags, spaced by at least `max(sendIntervalMs, 3100)` ms. URLs stay intact unless QQ explicitly rejects a proactive notification with code `40054010`; only then is the source URL replaced by its name for one paced retry. Platform permissions, opt-outs and quotas still apply. See the [log troubleshooting guide](docker-qq-testing.md#7-排查问题).
+
 实现核对与回归使用 [QQ 适配器 4.14.0 发布包](https://www.npmjs.com/package/@satorijs/adapter-qq/v/4.14.0) 中的事件转换、成员查询和消息编码器；适配器配置见[官方 QQ 文档](https://koishi.chat/zh-CN/plugins/adapter/qq#内部接口)。
 
 Official QQ (`qq`) checks native event roles first, then `getGuildMember`: `owner` / `admin` are allowed, while a verified `member` is denied even with a manual grant. If roles are unavailable, an operator may configure scoped `qqGroupManagers` fallback grants after verifying administrators. Timeouts and identity mismatches remain denied. Use the login bot's `session.selfId` / `bot.selfId`, **not the application AppID (`bot.config.id`)**, plus the group OpenID and member OpenIDs from that group. Empty grants still allow verified administrators. Maintain fallback grants manually; they neither subscribe automatically nor cancel existing subscriptions when removed. Private notifications explicitly use the DIRECT route. Both group and private proactive delivery still require permission from QQ.
