@@ -129,12 +129,22 @@ export class Monitor {
     let historyComplete = true
 
     const earliestSubscription = Math.min(...initialSubscriptions.map(subscription => subscription.subscribedAt))
-    const needsInitialCatchup = latest && ((!checkpoint && Date.parse(latest.announced_at) >= earliestSubscription)
-      || newSubscriptions.some(subscription => Date.parse(latest.announced_at) >= subscription.subscribedAt))
+    // Another poll may save executions after registration without processing this
+    // generation. Its checkpoint (and latest's older announcement time) cannot
+    // establish this subscription's baseline. Compare durable evidence with the
+    // registration snapshot, including non-latest events and same-millisecond writes.
+    const knownExecutionKeys = newSubscriptions.length
+      ? [...new Set((await this.store.executionKeys()).map(key => identity.key(key)))] : []
+    const needsInitialCatchup = (latest && ((!checkpoint && Date.parse(latest.announced_at) >= earliestSubscription)
+      || newSubscriptions.some(subscription => Date.parse(latest.announced_at) >= subscription.subscribedAt)))
+      || newSubscriptions.some(subscription => {
+        const baseline = new Set((subscription.baselineExecutionKeys ?? []).map(key => identity.key(key)))
+        return knownExecutionKeys.some(key => !baseline.has(key))
+      })
     const unconfirmed = pendingResets.filter(pending => !latestKeys.has(pending.key))
     const unresolved = unconfirmed.filter(pending => !activeScheduled || pending.key !== pendingResetKey)
-    if (unresolved.length || (latest && (needsInitialCatchup || (checkpoint
-      && (!checkpoint.latestResetKey || identity.key(checkpoint.latestResetKey) !== identity.key(resetKey(latest))))))) {
+    if (needsInitialCatchup || unresolved.length || (latest && checkpoint
+      && (!checkpoint.latestResetKey || identity.key(checkpoint.latestResetKey) !== identity.key(resetKey(latest))))) {
       const previousTime = checkpoint?.latestResetAt ? Date.parse(checkpoint.latestResetAt) : checkpoint?.checkedAt ?? earliestSubscription
       const from = new Date(Math.min(
         Math.max(previousTime, earliestSubscription),
