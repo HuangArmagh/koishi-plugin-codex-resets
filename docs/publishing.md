@@ -1,6 +1,6 @@
 # 发布到 npm 与 Koishi 插件市场
 
-包名为 `koishi-plugin-codex-resets`，Koishi 市场中的插件名为 `codex-resets`。GitHub 仓库保持私有，npm 包公开。版本号、仓库地址与 Koishi 依赖声明以根目录 `package.json` 为准。
+包名为 `koishi-plugin-codex-resets`，Koishi 市场中的插件名为 `codex-resets`。GitHub 仓库与 npm 包目前均公开。版本号、仓库地址与 Koishi 依赖声明以根目录 `package.json` 为准。
 
 ## 日常开发与发版边界
 
@@ -31,13 +31,13 @@ npm trust github koishi-plugin-codex-resets --repo HuangArmagh/koishi-plugin-cod
 
 工作流使用 Node.js 24、npm 12.2.1，GitHub Actions 固定到已核对的提交。构建任务仅有代码读取权限；发布任务在构建成功后才启动，拥有 OIDC 与上传 Release 附件所需权限。依赖安装和测试在构建任务内运行，发布任务不安装本项目依赖。
 
-私有仓库的发布不生成 provenance，工作流明确关闭该选项。`package.json` 中的 `repository.url` 必须与绑定的 GitHub 仓库匹配；该仓库地址随公开 npm 清单发布，仓库代码的访问权限仍保持私有。[npm 可信发布说明](https://docs.npmjs.com/trusted-publishers/)
+当前工作流未启用 provenance，使用 `NPM_CONFIG_PROVENANCE=false`。`package.json` 中的 `repository.url` 必须与绑定的 GitHub 仓库匹配；该仓库地址随公开 npm 清单发布，源码访问权限由 GitHub 仓库可见性设置决定。[npm 可信发布说明](https://docs.npmjs.com/trusted-publishers/)
 
 ## 发布一个新版本
 
-1. 明确选择尚未使用的正式版本号，更新 `package.json` 和锁文件。例如 `npm version 0.5.4 --no-git-tag-version`；此命令只在决定发版时运行。
+1. 明确选择尚未使用的正式版本号，更新 `package.json` 和锁文件。例如 `npm version 0.5.5 --no-git-tag-version`；此命令只在决定发版时运行。
 2. 完成修改、运行 `npm run check`，本地提交并按指令推送。
-3. 在该提交上创建对应标签，例如 `v0.5.4`，推送标签，并正式发布 GitHub Release。标签必须与包版本完全一致。
+3. 在该提交上创建对应标签，例如 `v0.5.5`，推送标签，并正式发布 GitHub Release。标签必须与包版本完全一致。
 4. 查看 GitHub Actions 中的 `Publish npm package`。工作流将按下述顺序执行。
 
 不要重复发布已经存在的版本。现有 Release 的源代码和安装包均以其标签为准；工作分支可以继续提交配置与功能改动，只有下一次明确发版才递增版本号。

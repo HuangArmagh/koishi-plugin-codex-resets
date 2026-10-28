@@ -17,7 +17,7 @@
 
 ## 1. 上传安装包
 
-从项目 `packages/releases/` 选择正式 `koishi-plugin-codex-resets-0.5.4.tgz`，或从 `packages/test/` 的指定构建目录选择测试包，通过 SFTP 或 scp 上传到 Linux 服务器的 `/tmp/` 作为传输暂存。这是已经编译好的安装包，服务器无需克隆源码或安装 TypeScript；本地项目不再把安装包保存在根目录。
+从项目 `packages/releases/` 选择正式 `koishi-plugin-codex-resets-0.5.5.tgz`，或从 `packages/test/` 的指定构建目录选择测试包，通过 SFTP 或 scp 上传到 Linux 服务器的 `/tmp/` 作为传输暂存。这是已经编译好的安装包，服务器无需克隆源码或安装 TypeScript；本地项目不再把安装包保存在根目录。
 
 在 Linux 服务器执行：
 
@@ -34,7 +34,7 @@ docker inspect koishi --format '{{json .Mounts}}'
 
 ```sh
 docker exec -w /koishi koishi mkdir -p vendor
-docker cp /tmp/koishi-plugin-codex-resets-0.5.4.tgz koishi:/koishi/vendor/
+docker cp /tmp/koishi-plugin-codex-resets-0.5.5.tgz koishi:/koishi/vendor/
 docker exec -it -w /koishi koishi sh
 ```
 
@@ -46,10 +46,10 @@ docker exec -it -w /koishi koishi sh
 
 | 实例使用的管理器 | 在容器 `/koishi` 中执行 |
 | --- | --- |
-| npm（`package-lock.json`） | `npm install ./vendor/koishi-plugin-codex-resets-0.5.4.tgz` |
-| Yarn 1（`yarn -v` 以 `1.` 开头） | `yarn add -W file:./vendor/koishi-plugin-codex-resets-0.5.4.tgz` |
-| Yarn 2 及以上 | `yarn add koishi-plugin-codex-resets@file:./vendor/koishi-plugin-codex-resets-0.5.4.tgz` |
-| pnpm 工作区 | `pnpm add -w ./vendor/koishi-plugin-codex-resets-0.5.4.tgz` |
+| npm（`package-lock.json`） | `npm install ./vendor/koishi-plugin-codex-resets-0.5.5.tgz` |
+| Yarn 1（`yarn -v` 以 `1.` 开头） | `yarn add -W file:./vendor/koishi-plugin-codex-resets-0.5.5.tgz` |
+| Yarn 2 及以上 | `yarn add koishi-plugin-codex-resets@file:./vendor/koishi-plugin-codex-resets-0.5.5.tgz` |
+| pnpm 工作区 | `pnpm add -w ./vendor/koishi-plugin-codex-resets-0.5.5.tgz` |
 
 Yarn 1 的 `-W` 用于安装到工作区根目录；Yarn 2 及以上不需要该参数。[Yarn 1 文档](https://classic.yarnpkg.com/lang/en/docs/cli/add/)、[Yarn 文档](https://yarnpkg.com/cli/add)
 
