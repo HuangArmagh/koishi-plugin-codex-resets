@@ -1,5 +1,6 @@
 import { languageNames, text, type Locale } from './locales'
 import type { Notification, Reset, ScheduledReset, StatusResponse } from './types'
+import { ExecutionIdentity, recentExecutions } from './execution'
 
 // Etc/GMT uses the opposite sign: these are fixed UTC offsets, without daylight saving.
 const timeZones: Record<Locale, { id: string; label: string }> = {
@@ -72,8 +73,9 @@ export function formatOverview(response: StatusResponse | null, history: Reset[]
     }))
   }
   else {
-    const unique = [...new Map(history.map(reset => [JSON.stringify([reset.reset_type, reset.id]), reset])).values()]
-      .sort((a, b) => Date.parse(b.announced_at) - Date.parse(a.announced_at)).slice(0, 3)
+    const identity = new ExecutionIdentity()
+    if (response?.data.latest_reset) identity.observe(response.data.latest_reset)
+    const unique = recentExecutions(history, identity).slice(0, 3)
     if (!unique.length) lines.push(text(locale, 'noReset'))
     unique.forEach((reset, index) => lines.push(
       `${index + 1}. ${formatTime(reset.announced_at, locale, false)} — ${text(locale, reset.reset_type === 'banked' ? 'banked' : 'regular')}`,

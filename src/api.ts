@@ -1,5 +1,8 @@
 import type { Api, ApiStateStore, Clock, Reset, ResetListResponse, Source, StatusResponse, Watch } from './types'
 import { Serial, clock as systemClock, errorText } from './util'
+import { ExecutionIdentity, recentExecutions } from './execution'
+
+const failureBackoffMs = 300_000
 
 export interface HttpResponse {
   status: number
@@ -154,7 +157,7 @@ export class CodexApi implements Api {
   private async recordFailure(): Promise<void> {
     if (this.options.signal.aborted) return
     this.failures++
-    this.blockedUntil = this.clock.now() + Math.min(60_000 * 2 ** (this.failures - 1), 3_600_000)
+    this.blockedUntil = Math.max(this.blockedUntil, this.clock.now() + failureBackoffMs)
     await this.saveState()
   }
 
@@ -216,8 +219,7 @@ export class CodexApi implements Api {
         const retry = response.headers.get('retry-after')
         const retryDelay = retry && /^\d+$/.test(retry.trim())
           ? Number(retry) * 1000 : retry ? Date.parse(retry) - this.clock.now() : 0
-        const delay = Math.max(5000, Number.isFinite(retryDelay) ? retryDelay : 0,
-          Math.min(60_000 * 2 ** (this.failures - 1), 3_600_000))
+        const delay = Math.max(failureBackoffMs, Number.isFinite(retryDelay) ? retryDelay : 0)
         this.blockedUntil = this.clock.now() + delay
         await this.saveState()
         throw new ApiError(`Codex Resets API：${description}`, response.status, this.blockedUntil)
@@ -256,17 +258,43 @@ export class CodexApi implements Api {
   async recent(): Promise<ResetListResponse> {
     this.options.signal.throwIfAborted()
     const latest = this.cachedStatus?.data.latest_reset
-    const statusKey = JSON.stringify(latest ? [latest.reset_type, latest.id, latest.announced_at] : null)
+    const statusKey = JSON.stringify(latest ? [latest.reset_type, latest.id, latest.announced_at, latest.source.type] : null)
     const cached = this.recentCache
     if (!this.dirtyState && cached && cached.statusKey === statusKey && this.clock.now() - cached.at < this.options.cacheMs) {
       return Promise.resolve(cached.value)
     }
     // Coalesce interactive reads without changing the ascending catch-up cursor or checkpoint.
-    if (!this.recentTask) this.recentTask = this.request('/api/v1/resets?limit=3&order=desc', parseHistory)
+    if (!this.recentTask) this.recentTask = this.fetchRecent(latest)
       .then(value => {
         this.recentCache = { value, at: this.clock.now(), statusKey }
         return value
       }).finally(() => { this.recentTask = undefined })
     return this.recentTask
+  }
+
+  private async fetchRecent(latest: Reset | null | undefined): Promise<ResetListResponse> {
+    const identity = new ExecutionIdentity()
+    if (latest) identity.observe(latest)
+    const records: Reset[] = []
+    const visited = new Set<string>()
+    let cursor: string | undefined
+    for (let page = 0; ; page++) {
+      const query = new URLSearchParams({ limit: '3', order: 'desc' })
+      if (cursor) query.set('cursor', cursor)
+      const result = await this.request(`/api/v1/resets?${query}`, parseHistory)
+      records.push(...result.data)
+      const unique = recentExecutions(records, identity)
+      if (unique.length >= 3 || !result.pagination.has_more) {
+        return { data: unique.slice(0, 3), pagination: result.pagination }
+      }
+      const next = result.pagination.next_cursor
+      if (!next || visited.has(next) || page >= 19) {
+        // Do not cache an incomplete traversal or keep following broken cursors.
+        await this.serial.run(() => this.recordFailure())
+        throw new Error('最近重置历史分页异常或超过 20 页，未缓存不完整结果')
+      }
+      visited.add(next)
+      cursor = next
+    }
   }
 }

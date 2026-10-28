@@ -16,9 +16,9 @@ Search for **codex-resets** in the Koishi Plugin Market, install it, then add an
 
 Send a command in the conversation that should receive notifications. Commands accept `/`, your instance prefix, or no prefix.
 
-状态指令查询当前状态、最近 3 条历史和订阅信息；开启／关闭指令管理当前会话的两类重置提醒。
+状态指令查询当前状态、去重后的最近 3 次重置和订阅信息；开启／关闭指令管理当前会话的两类重置提醒。
 
-The status command shows the current status, the latest 3 resets and subscription details. Subscribe/unsubscribe enables or disables both types of reset alerts for this conversation.
+The status command shows the current status, the latest 3 distinct reset events and subscription details. Subscribe/unsubscribe enables or disables both types of reset alerts for this conversation.
 
 | 语言 / Language | 状态 / Status | 开启订阅 / Subscribe | 关闭订阅 / Unsubscribe |
 | --- | --- | --- | --- |

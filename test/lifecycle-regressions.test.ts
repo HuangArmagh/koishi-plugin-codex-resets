@@ -308,7 +308,11 @@ describe('announcement and native-command lifecycle regressions', () => {
       failStatus = false
       await vi.advanceTimersByTimeAsync(60_000)
       expect(send).toHaveBeenCalledTimes(2)
-      await vi.advanceTimersByTimeAsync(60_000)
+      // Retry-After: 180 must not shorten the fixed 300-second API cooldown.
+      await vi.advanceTimersByTimeAsync(179_999)
+      expect(send).toHaveBeenCalledTimes(2)
+      expect(vi.mocked(app.http)).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
       expect(send).toHaveBeenCalledTimes(3)
       expect(vi.mocked(app.http)).toHaveBeenCalledTimes(3)
     } finally {

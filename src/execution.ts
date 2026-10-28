@@ -46,4 +46,24 @@ export class ExecutionIdentity {
     for (const candidate of keys) if (this.key(candidate) === canonical) return true
     return false
   }
+
+  groups(records: Iterable<Reset>): Reset[][] {
+    const values = [...records]
+    // Learn every relationship before grouping, regardless of response order.
+    for (const reset of values) this.observe(reset)
+    const groups = new Map<string, Reset[]>()
+    for (const reset of values) {
+      const key = this.key(resetKey(reset))
+      const group = groups.get(key)
+      if (group) group.push(reset)
+      else groups.set(key, [reset])
+    }
+    return [...groups.values()]
+  }
+}
+
+export function recentExecutions(records: Iterable<Reset>, identity = new ExecutionIdentity()): Reset[] {
+  return identity.groups(records).map(group => group.reduce((latest, reset) =>
+    Date.parse(reset.announced_at) > Date.parse(latest.announced_at) ? reset : latest,
+  )).sort((left, right) => Date.parse(right.announced_at) - Date.parse(left.announced_at))
 }

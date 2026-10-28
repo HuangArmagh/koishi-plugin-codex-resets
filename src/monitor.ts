@@ -124,8 +124,8 @@ export class Monitor {
       }
       return subscriptions.flatMap(subscription => subscription.pendingResets ?? [])
     })
-    const resets = new Map<string, Reset>()
-    if (latest) resets.set(resetKey(latest), latest)
+    // Keep all timestamps until each subscription's eligibility has been checked.
+    const resets: Reset[] = latest ? [latest] : []
     let historyComplete = true
 
     const earliestSubscription = Math.min(...initialSubscriptions.map(subscription => subscription.subscribedAt))
@@ -151,7 +151,7 @@ export class Monitor {
           if (page >= 20) throw new Error('历史补查超过 2000 条，检查点已保留，需检查上游分页')
           this.options.signal.throwIfAborted()
           const result = await this.api.history(from, cursor)
-          for (const reset of result.data) resets.set(resetKey(reset), reset)
+          resets.push(...result.data)
           if (!result.pagination.has_more) break
           const next = result.pagination.next_cursor
           if (!next || visited.has(next)) throw new Error('历史接口返回了无效或重复的分页游标')
@@ -168,18 +168,12 @@ export class Monitor {
     await this.mutations.run(async () => {
       this.options.signal.throwIfAborted()
       const subscriptions = await this.store.subscriptions()
-      for (const reset of resets.values()) identity.observe(reset)
-      const confirmedKeys = new Set([...resets.values()].flatMap(reset => identity.keys(resetKey(reset))))
-      // Prefer the status record (inserted first) when both IDs describe one event.
-      const unique = new Map<string, Reset>()
-      for (const reset of resets.values()) {
-        const key = identity.key(resetKey(reset))
-        if (!unique.has(key)) unique.set(key, reset)
-      }
-      const ordered = [...unique.values()].sort((left, right) => Date.parse(left.announced_at) - Date.parse(right.announced_at))
+      const groups = identity.groups(resets)
+      const confirmedKeys = new Set(resets.flatMap(reset => identity.keys(resetKey(reset))))
+      const latestGroup = latest ? groups.find(group => identity.key(resetKey(group[0]!)) === identity.key(resetKey(latest))) : undefined
       // Evidence is global and outlives subscriptions, notification queues and checkpoints.
       // Persist it before allowing announcements or committing catch-up progress.
-      await this.store.saveExecutions([...confirmedKeys], [...resets.values()].flatMap(reset => {
+      await this.store.saveExecutions([...confirmedKeys], resets.flatMap(reset => {
         const link = executionLink(reset)
         return link ? [link] : []
       }))
@@ -200,18 +194,23 @@ export class Monitor {
         if (!wasBaselined) {
           // A global checkpoint may already be ahead of this subscription; keep its initial catch-up retryable.
           subscription.baselined = historyComplete
-          subscription.baselineResetKey = latest && Date.parse(latest.announced_at) < subscription.subscribedAt
+          subscription.baselineResetKey = latest && latestGroup?.every(reset => Date.parse(reset.announced_at) < subscription.subscribedAt)
             && !identity.includes(pendingKeys, resetKey(latest)) ? resetKey(latest) : ''
           subscriptionChanged = true
         }
-        for (const reset of ordered) {
+        const eligible = groups.flatMap(group => {
+          const key = resetKey(group[0]!)
+          if (identity.includes([subscription.baselineResetKey, ...baselineExecutions], key)) return []
+          // Prefer status when eligible, but an older alias must not hide a later
+          // observation that falls within this subscription's lifetime.
+          const record = group.find(reset => Date.parse(reset.announced_at) >= subscription.subscribedAt
+            || identity.includes(pendingKeys, key)
+            || (wasBaselined && latest && identity.key(key) === identity.key(resetKey(latest))))
+          return record ? [record] : []
+        }).sort((left, right) => Date.parse(left.announced_at) - Date.parse(right.announced_at))
+        for (const reset of eligible) {
           const key = resetKey(reset)
           const keys = identity.keys(key)
-          if (identity.includes([subscription.baselineResetKey, ...baselineExecutions], key)) continue
-          // Execution may be observed after subscription while retaining an older announcement time.
-          if (Date.parse(reset.announced_at) < subscription.subscribedAt
-            && !identity.includes(pendingKeys, key)
-            && (!wasBaselined || !latest || key !== resetKey(latest))) continue
           // Keep the existing row, including its original ID, retries and unknown
           // send outcome, instead of creating another row for the linked ID.
           if (!(await this.store.executionDeliveries(subscription.id, subscription.generation, keys)).length) {

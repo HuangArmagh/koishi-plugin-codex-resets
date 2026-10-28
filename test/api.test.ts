@@ -48,10 +48,10 @@ describe('API contract and conservative polling', () => {
     const request = () => endpoint === 'history' ? api.history(new Date(clock.now()).toISOString()) : api[endpoint]()
     transport.mockResolvedValue(response(JSON.stringify(body)))
     await expect(request()).rejects.toThrow()
-    expect(api.retryAt).toBe(clock.now() + 60_000)
+    expect(api.retryAt).toBe(clock.now() + 300_000)
     await expect(request()).rejects.toBeInstanceOf(ApiError)
     expect(transport).toHaveBeenCalledTimes(1)
-    clock.advance(60_000)
+    clock.advance(300_000)
     const corrected = endpoint === 'status' ? status({ latest_reset: reset({ reset_type: 'banked' }) })
       : { data: [reset({ reset_type: 'banked' })], pagination: { has_more: false, next_cursor: null } }
     transport.mockResolvedValue(response(corrected))
@@ -349,15 +349,15 @@ describe('API contract and conservative polling', () => {
     expect(store.requestState?.blockedUntil).toBe(0)
   })
 
-  it('keeps exponential network backoff and request spacing after reload', async () => {
+  it('keeps fixed network backoff and request spacing after reload', async () => {
     const clock = makeClock(), store = new MemoryStore()
     const transport = vi.fn<Transport>(async () => { throw new Error('offline') })
     const options = { cacheMs: 60_000, clock, signal: new AbortController().signal, stateStore: store }
     await expect(new CodexApi(transport, options).status()).rejects.toThrow('offline')
-    clock.advance(60_000)
+    clock.advance(300_000)
     await expect(new CodexApi(transport, options).status()).rejects.toThrow('offline')
-    expect(store.requestState?.blockedUntil! - clock.now()).toBe(120_000)
-    clock.advance(120_000)
+    expect(store.requestState?.blockedUntil! - clock.now()).toBe(300_000)
+    clock.advance(300_000)
     transport.mockResolvedValue(response())
     await new CodexApi(transport, options).status()
     const previousRequestTime = clock.now()
@@ -473,7 +473,7 @@ describe('API contract and conservative polling', () => {
     transport.mockResolvedValueOnce(response({ detail: 'Unavailable' }, 503))
     await expect(api.status()).rejects.toThrow('Unavailable')
     expect(api.retryAt).toBeGreaterThan(clock.now())
-    clock.advance(60_000)
+    clock.advance(300_000)
     transport.mockResolvedValueOnce(response('broken json'))
     await expect(api.status()).rejects.toThrow()
     expect(api.retryAt).toBeGreaterThan(clock.now())
