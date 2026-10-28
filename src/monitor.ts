@@ -18,6 +18,7 @@ export class Monitor {
   private drainTask?: Promise<void>
   private drainRequested = false
   private readonly inFlight = new Map<string, Promise<void>>()
+  private readonly pendingSuccesses = new Map<string, { delivery: Delivery; sentAt: number }>()
   private lastSentAt = -Infinity
   private activeScheduled: { key: string; value: ScheduledReset } | null | undefined
 
@@ -293,10 +294,12 @@ export class Monitor {
   }
 
   private async deliver(): Promise<void> {
+    // Acknowledged messages need only a database retry, even during API backoff.
+    for (const subscriptionId of [...this.pendingSuccesses.keys()]) await this.persistSuccess(subscriptionId)
     for (let delivery of await this.store.pending(this.clock.now())) {
       this.options.signal.throwIfAborted()
       // An unknown adapter outcome must not be retried or overtaken in the same conversation.
-      if (this.inFlight.has(delivery.subscriptionId)) continue
+      if (this.inFlight.has(delivery.subscriptionId) || this.pendingSuccesses.has(delivery.subscriptionId)) continue
       // Upgrades must not send forecasts or diagnostics queued by previous releases.
       if (delivery.kind === 'watch' || delivery.eventKey.startsWith('watch:') || delivery.payload?.type === 'watch'
         || delivery.eventKey.startsWith('test:') || delivery.payload?.type === 'test') {
@@ -326,9 +329,6 @@ export class Monitor {
         const completion = (async () => {
           try {
             if (await this.send(subscription, content, submitCurrent) === false) return
-            await this.mutations.run(async () => {
-              if (!this.options.signal.aborted) await this.store.updateDelivery(delivery.id, { sentAt: this.clock.now() })
-            })
           } catch (error) {
             if (this.options.signal.aborted) return
             await this.mutations.run(async () => {
@@ -338,7 +338,13 @@ export class Monitor {
               })
             })
             this.options.report(`向订阅会话 ${subscription.id.slice(0, 12)} 推送失败，将重试`, error)
+            return
           }
+          if (this.options.signal.aborted) return
+          // Capture the confirmed outcome before attempting persistence. An error
+          // below must never turn an acknowledged send into another platform call.
+          this.pendingSuccesses.set(subscription.id, { delivery, sentAt: this.clock.now() })
+          await this.persistSuccess(subscription.id)
         })().catch(error => {
           if (!this.options.signal.aborted) this.options.report('投递结果保存失败，将在后续检查中恢复', error)
         }).finally(() => { this.inFlight.delete(subscription.id) })
@@ -350,11 +356,44 @@ export class Monitor {
     }
   }
 
+  private async persistSuccess(subscriptionId: string): Promise<void> {
+    try {
+      await this.mutations.run(async () => {
+        if (this.options.signal.aborted) return
+        const result = this.pendingSuccesses.get(subscriptionId)
+        if (!result) return
+        const { delivery, sentAt } = result
+        const subscription = await this.store.subscription(subscriptionId)
+        if (!subscription || subscription.generation !== delivery.generation) {
+          this.pendingSuccesses.delete(subscriptionId)
+          return
+        }
+        const current = await this.store.delivery(delivery.id)
+        this.options.signal.throwIfAborted()
+        if (!current) {
+          // Withdrawal can remove an unsaved announcement. Retain its confirmed
+          // outcome so the same announcement cannot be replayed if it reappears.
+          await this.store.enqueue({ ...delivery, sentAt })
+        } else if (!current.sentAt) {
+          await this.store.updateDelivery(delivery.id, { sentAt })
+        }
+        this.pendingSuccesses.delete(subscriptionId)
+      })
+    } catch (error) {
+      if (!this.options.signal.aborted) this.options.report(
+        `会话 ${subscriptionId.slice(0, 12)} 的消息已发送，但发送结果保存失败；将重试保存，不再重发`, error,
+      )
+    }
+  }
+
   // Call only while holding mutations: validation and submission must precede a
   // successful cancellation together, even when a database read is delayed.
   private async prepareDelivery(id: string) {
     const delivery = await this.store.delivery(id)
     if (!delivery || delivery.sentAt || delivery.retryAt > this.clock.now()) return
+    // Recheck after reading: a late adapter success may have arrived while the
+    // pending batch was being fetched, including under a linked execution ID.
+    if (this.pendingSuccesses.has(delivery.subscriptionId)) return
     const subscription = await this.store.subscription(delivery.subscriptionId)
     if (!subscription || subscription.generation !== delivery.generation) {
       await this.store.deleteDelivery(id)
