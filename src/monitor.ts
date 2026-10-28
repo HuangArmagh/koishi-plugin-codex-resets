@@ -133,12 +133,13 @@ export class Monitor {
     // newer observations. Every new generation must finish its own catch-up,
     // including after a failed first status request or another poll's checkpoint.
     const needsInitialCatchup = newSubscriptions.length > 0
-      || (!checkpoint && latest && Date.parse(latest.announced_at) >= earliestSubscription)
     const unconfirmed = pendingResets.filter(pending => !latestKeys.has(pending.key))
     const unresolved = unconfirmed.filter(pending => !activeScheduled || pending.key !== pendingResetKey)
-    if (needsInitialCatchup || unresolved.length || (latest && checkpoint
-      && (!checkpoint.latestResetKey || identity.key(checkpoint.latestResetKey) !== identity.key(resetKey(latest))))) {
-      const previousTime = checkpoint?.latestResetAt ? Date.parse(checkpoint.latestResetAt) : checkpoint?.checkedAt ?? earliestSubscription
+    if (needsInitialCatchup || unresolved.length || (latest
+      && (!checkpoint?.latestResetKey || identity.key(checkpoint.latestResetKey) !== identity.key(resetKey(latest))))) {
+      // A legacy empty checkpoint's checkedAt may have advanced without checking
+      // history. Without an execution anchor, cover the full subscription lifetime.
+      const previousTime = checkpoint?.latestResetAt ? Date.parse(checkpoint.latestResetAt) : earliestSubscription
       const from = new Date(Math.min(
         Math.max(previousTime, earliestSubscription),
         // History filters by announcement time. A still-listed current announcement
@@ -243,9 +244,11 @@ export class Monitor {
         // Commit progress only after every eligible delivery is durable; retries use the same delivery IDs.
         if (subscriptionChanged) await this.store.saveSubscription(subscription)
       }
-      if (historyComplete) await this.store.saveCheckpoint({
-        latestResetKey: latest ? resetKey(latest) : null,
-        latestResetAt: latest?.announced_at ?? null,
+      // Empty status does not establish a new execution boundary. Preserve the
+      // previous checkpoint so recovery can still catch intermediate resets.
+      if (historyComplete && latest) await this.store.saveCheckpoint({
+        latestResetKey: resetKey(latest),
+        latestResetAt: latest.announced_at,
         checkedAt: this.clock.now(),
       })
     })

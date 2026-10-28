@@ -26,6 +26,7 @@ function setupDelivery() {
 describe('delivery isolation and history backoff', () => {
   it('continues polling and delivering to other conversations while one adapter call stalls', async () => {
     vi.useFakeTimers({ now: NOW })
+    vi.spyOn(require('../lib/util').clock, 'sleep').mockImplementation(ms => new Promise(resolve => setTimeout(resolve, ms)))
     const app = new App()
     app.plugin(Memory)
     const mock = app.plugin(Mock)
@@ -51,9 +52,13 @@ describe('delivery isolation and history backoff', () => {
         return ['message-id']
       })
       await vi.advanceTimersByTimeAsync(60_000)
+      expect(send).not.toHaveBeenCalled()
+      // These restored subscriptions have no checkpoint: cover history before draining.
+      await vi.advanceTimersByTimeAsync(5000)
       expect(send.mock.calls.map(call => call[0])).toEqual([a.targetId])
+      const requestsBeforeStall = http.mock.calls.length
       await vi.advanceTimersByTimeAsync(10 * 60_000)
-      expect.soft(http.mock.calls.length).toBeGreaterThan(1)
+      expect.soft(http.mock.calls.length).toBeGreaterThan(requestsBeforeStall)
       expect.soft(send.mock.calls.map(call => call[0])).toEqual([a.targetId, b.targetId])
     } finally {
       release()
