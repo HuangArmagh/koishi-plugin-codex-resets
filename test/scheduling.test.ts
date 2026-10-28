@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { configureOneBotMock, enqueueResetFixtures, NOW, reset, status, target } from './helpers'
+import { apiHttpResponse, configureOneBotMock, enqueueResetFixtures, NOW, reset, status, target } from './helpers'
 
 const require = createRequire(import.meta.url)
 const { App } = require('koishi') as typeof import('koishi')
@@ -19,10 +19,11 @@ afterEach(async () => {
 
 async function setup() {
   vi.useFakeTimers({ now: NOW })
+  vi.spyOn(require('../lib/util').clock, 'sleep').mockImplementation(ms => new Promise(resolve => setTimeout(resolve, ms)))
   const app = new App({ prefix: '' })
   app.plugin(Memory)
   const mock = app.plugin(Mock)
-  const http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(status()) }))
+  const http = vi.fn(async (url: string) => apiHttpResponse(url, status()))
   app.http = http as unknown as typeof app.http
   const fork = app.plugin(plugin, { pollIntervalMs: 60_000 })
   cleanups.push(async () => { await mock.dispose(); await app.stop() })
@@ -46,7 +47,7 @@ describe('subscription wake scheduling', () => {
       await vi.advanceTimersByTimeAsync(500)
       expect((await client.receive('重置订阅开启')).join('')).toContain('无需重复订阅')
     }
-    expect(http).toHaveBeenCalledTimes(1)
+    expect(http).toHaveBeenCalledTimes(2) // One status request and one initial history check.
     expect(send).toHaveBeenCalledTimes(1)
     expect(send.mock.calls[0]![0]).toBe('other-conversation')
     expect(await store.subscriptions()).toHaveLength(2)

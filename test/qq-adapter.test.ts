@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import type { App as KoishiApp } from 'koishi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { NOW, reset, scheduled, status } from './helpers'
+import { apiHttpResponse, NOW, reset, scheduled, status } from './helpers'
 
 const require = createRequire(import.meta.url)
 const { App, Bot, Universal, Logger } = require('koishi') as typeof import('koishi')
@@ -53,7 +53,7 @@ async function setup(locale: typeof locales[number] | 'auto' = 'en-US', sendInte
   app.plugin(Memory)
   app.plugin(QQFixture)
   const bot = app.bots[0]! as QQFixture
-  app.http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(status({ scheduled_reset: scheduled() })) })) as unknown as typeof app.http
+  app.http = vi.fn(async (url: string) => apiHttpResponse(url, status({ scheduled_reset: scheduled() }))) as unknown as typeof app.http
   app.plugin(plugin, { pollIntervalMs: 60_000, locale, sendIntervalMs })
   await app.start()
   await vi.advanceTimersByTimeAsync(0)
@@ -207,10 +207,10 @@ describe('published QQ adapter integration', () => {
       return original(id, data)
     })
     const gap = Math.max(interval, 3100)
-    await vi.advanceTimersByTimeAsync(1000)
-    expect(times).toEqual([NOW + 1000])
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(times).toEqual([NOW + 6000])
     await vi.advanceTimersByTimeAsync(gap * 3)
-    expect(times).toEqual([0, 1, 2, 3].map(index => NOW + 1000 + gap * index))
+    expect(times).toEqual([0, 1, 2, 3].map(index => NOW + 6000 + gap * index))
     expect(bot.wire).toHaveLength(2)
   })
 
@@ -224,7 +224,7 @@ describe('published QQ adapter integration', () => {
     endpoint.mockRejectedValueOnce(Object.assign(new Error(), {
       response: { status: 400, data: { code: 40054010, message: 'URL not allowed' } },
     }))
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(6000)
     expect(endpoint).toHaveBeenCalledTimes(1)
     await session.execute({ name: 'codexresetunsubscribe', args: [] }, true)
     await vi.advanceTimersByTimeAsync(3100)
@@ -267,7 +267,7 @@ describe('published QQ adapter integration', () => {
     bot.internal.sendMessage.mockRejectedValueOnce(Object.assign(new Error(), {
       response: { status: 400, data: { code: 40054010, message: 'URL not allowed' } },
     }))
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(6000)
     await store.cancelScheduledExcept(null)
     await vi.advanceTimersByTimeAsync(3100)
     expect(bot.internal.sendMessage).toHaveBeenCalledTimes(1)
@@ -283,7 +283,7 @@ describe('published QQ adapter integration', () => {
     bot.internal.sendPrivateMessage.mockRejectedValueOnce(Object.assign(new Error(), {
       response: { status: 400, data: { code: 40054010, message: 'URL not allowed' } },
     }))
-    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(6000)
     const japanese = await incoming(bot, true)
     japanese.content = 'リセット購読'
     await japanese.execute({ name: 'codexresetsubscribe', args: [] }, true)

@@ -139,7 +139,8 @@ describe('unambiguous API timestamps', () => {
   it('does not advance a subscription baseline or use a status snapshot with an ambiguous forecast expiry', async () => {
     const clock = makeClock(), store = new MemoryStore(), send = vi.fn(async () => {})
     let body = status({ active_watch: watch({ expires_at: unqualified }) })
-    const api = new CodexApi(async () => ({ status: 200, headers: new Headers(), body }), {
+    const api = new CodexApi(async url => ({ status: 200, headers: new Headers(),
+      body: url.includes('/resets?') ? { data: [], pagination: { has_more: false, next_cursor: null } } : body }), {
       clock, stateStore: store, cacheMs: 60_000, signal: new AbortController().signal,
     })
     const monitor = new Monitor(store, api, send, { clock, sendDelayMs: 1000, signal: new AbortController().signal, report: vi.fn() })

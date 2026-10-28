@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { describe, it, expect, vi } from 'vitest'
 import { Monitor, resetKey } from '../src/monitor'
-import { enqueueResetFixtures, makeApi, makeClock, MemoryStore, NOW, reset, scheduled, status, target } from './helpers'
+import { apiHttpResponse, enqueueResetFixtures, makeApi, makeClock, MemoryStore, NOW, reset, scheduled, status, target } from './helpers'
 
 const require = createRequire(import.meta.url)
 const { App } = require('koishi') as typeof import('koishi')
@@ -280,13 +280,14 @@ describe('announcement and native-command lifecycle regressions', () => {
 
   it('holds announcement retries through HTTP backoff and resumes only after a successful refresh', async () => {
     vi.useFakeTimers({ now: NOW })
+    vi.spyOn(require('../lib/util').clock, 'sleep').mockImplementation(ms => new Promise(resolve => setTimeout(resolve, ms)))
     const app = new App({ prefix: '' })
     app.plugin(Memory)
     const mock = app.plugin(Mock)
     let failStatus = false
-    app.http = vi.fn(async () => failStatus
+    app.http = vi.fn(async (url: string) => failStatus
       ? { status: 503, headers: new Headers({ 'Retry-After': '180' }), data: '{}' }
-      : { status: 200, headers: new Headers(), data: JSON.stringify(status({ scheduled_reset: scheduled() })) }) as unknown as typeof app.http
+      : apiHttpResponse(url, status({ scheduled_reset: scheduled() }))) as unknown as typeof app.http
     app.plugin(plugin, { pollIntervalMs: 60_000 })
     await app.start()
     try {
@@ -296,7 +297,7 @@ describe('announcement and native-command lifecycle regressions', () => {
       await new KoishiStore(app).saveSubscription({ ...target('group-a', 'channel', bot.selfId), locale: 'zh-CN', generation: 'review', subscribedAt: NOW, baselined: false, baselineResetKey: '' })
       const store = new KoishiStore(app)
       const send = vi.spyOn(bot, 'sendMessage').mockRejectedValueOnce(new Error('adapter offline')).mockResolvedValue(['message-id'])
-      await vi.advanceTimersByTimeAsync(60_000)
+      await vi.advanceTimersByTimeAsync(65_000) // Status plus the initial history check, spaced by five seconds.
       expect(send).toHaveBeenCalledTimes(1)
       failStatus = true
       await vi.advanceTimersByTimeAsync(60_000)
@@ -304,17 +305,17 @@ describe('announcement and native-command lifecycle regressions', () => {
       await enqueueResetFixtures(store, target('group-a', 'channel', bot.selfId), 1, Date.now())
       await vi.advanceTimersByTimeAsync(60_000)
       expect(send).toHaveBeenCalledTimes(2)
-      expect(vi.mocked(app.http)).toHaveBeenCalledTimes(2)
+      expect(vi.mocked(app.http)).toHaveBeenCalledTimes(3)
       failStatus = false
       await vi.advanceTimersByTimeAsync(60_000)
       expect(send).toHaveBeenCalledTimes(2)
       // Retry-After: 180 must not shorten the fixed 300-second API cooldown.
       await vi.advanceTimersByTimeAsync(179_999)
       expect(send).toHaveBeenCalledTimes(2)
-      expect(vi.mocked(app.http)).toHaveBeenCalledTimes(2)
+      expect(vi.mocked(app.http)).toHaveBeenCalledTimes(3)
       await vi.advanceTimersByTimeAsync(1)
       expect(send).toHaveBeenCalledTimes(3)
-      expect(vi.mocked(app.http)).toHaveBeenCalledTimes(3)
+      expect(vi.mocked(app.http)).toHaveBeenCalledTimes(4)
     } finally {
       await mock.dispose()
       await app.stop()

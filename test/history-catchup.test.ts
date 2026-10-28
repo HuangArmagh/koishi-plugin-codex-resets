@@ -69,7 +69,7 @@ describe('history catch-up includes the current pending announcement', () => {
     expect((await store.checkpoint())?.latestResetKey).toBe(resetKey(newest))
     for (let index = 0; index < 2; index++) { clock.advance(60_000); await monitor.poll() }
     expect(send).toHaveBeenCalledTimes(3)
-    expect(historyRequests()).toHaveLength(1)
+    expect(historyRequests()).toHaveLength(2)
   })
 
   it('keeps a stable pending announcement from triggering unnecessary history requests', async () => {
@@ -77,7 +77,7 @@ describe('history catch-up includes the current pending announcement', () => {
     await monitor.subscribe(target())
     await monitor.poll()
     for (let index = 0; index < 3; index++) { clock.advance(60_000); await monitor.poll() }
-    expect(historyRequests()).toEqual([])
+    expect(historyRequests()).toHaveLength(1) // Initialization only; stable polls add none.
     expect(send).toHaveBeenCalledTimes(1)
   })
 
@@ -101,8 +101,8 @@ describe('history catch-up includes the current pending announcement', () => {
     state.pageSize = 1
     advance()
     await monitor.poll()
-    expect(historyRequests().map(({ url }) => url.searchParams.get('from'))).toEqual(Array(4).fill(announcement.announced_at))
-    expect(historyRequests().map(({ url }) => url.searchParams.get('cursor'))).toEqual([null, 'page_1', 'page_2', 'page_3'])
+    expect(historyRequests().map(({ url }) => url.searchParams.get('from'))).toEqual(Array(5).fill(announcement.announced_at))
+    expect(historyRequests().map(({ url }) => url.searchParams.get('cursor'))).toEqual([null, null, 'page_1', 'page_2', 'page_3'])
     expect(requests.slice(1).every((request, index) => request.at - requests[index]!.at >= 5000)).toBe(true)
     expect(await store.hasExecution(resetKey(executed))).toBe(true)
     expect(send).toHaveBeenCalledTimes(3)
@@ -126,7 +126,7 @@ describe('history catch-up includes the current pending announcement', () => {
     state.limited = false
     clock.advance(600_000)
     await restarted.poll()
-    expect(historyRequests().map(({ url }) => url.searchParams.get('from'))).toEqual([announcement.announced_at, announcement.announced_at])
+    expect(historyRequests().map(({ url }) => url.searchParams.get('from'))).toEqual(Array(3).fill(announcement.announced_at))
     expect(await store.hasExecution(resetKey(executed))).toBe(true)
     expect(send).toHaveBeenCalledTimes(3)
     expect(send.mock.calls.filter(([, message]) => message.includes('重置预告'))).toHaveLength(1)

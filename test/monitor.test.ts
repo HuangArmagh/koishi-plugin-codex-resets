@@ -132,7 +132,8 @@ describe('explicit conversation subscriptions', () => {
   it('does not establish a new subscription baseline from a pre-subscription cache', async () => {
     const context = setup()
     let snapshot = status()
-    const transport = vi.fn(async () => ({ status: 200, headers: new Headers(), body: structuredClone(snapshot) }))
+    const transport = vi.fn(async (url: string) => ({ status: 200, headers: new Headers(), body: url.includes('/resets?')
+      ? { data: [], pagination: { has_more: false, next_cursor: null } } : structuredClone(snapshot) }))
     const api = new CodexApi(transport, { clock: context.clock, cacheMs: 300_000, signal: context.controller.signal })
     const monitor = new Monitor(context.store, api, context.send, context.options)
     await api.status()
@@ -144,7 +145,7 @@ describe('explicit conversation subscriptions', () => {
     context.clock.advance(300_001)
     await monitor.poll()
     expect(context.send).not.toHaveBeenCalled()
-    expect(transport).toHaveBeenCalledTimes(3)
+    expect(transport).toHaveBeenCalledTimes(4)
   })
 
   it('recovers an earlier-announced scheduled execution across restart and a newer reset', async () => {
@@ -173,7 +174,8 @@ describe('explicit conversation subscriptions', () => {
     await monitor.subscribe(target())
     await monitor.poll()
     send.mockClear()
-    expect(api.history).not.toHaveBeenCalled()
+    expect(api.history).toHaveBeenCalledTimes(1) // Initial history check.
+    api.history.mockClear()
     clock.advance(60_000)
     state.current = status()
     await monitor.poll()
@@ -401,6 +403,7 @@ describe('explicit conversation subscriptions', () => {
     const { monitor, state, clock, api, send } = setup()
     await monitor.subscribe(target())
     await monitor.poll()
+    api.history.mockClear() // Inspect the two-page gap after initialization.
     clock.advance(60_000)
     const middle = reset({ id: 'middle', announced_at: new Date(NOW + 10_000).toISOString(), reset_type: 'banked' })
     const latest = reset({ id: 'latest', announced_at: new Date(NOW + 50_000).toISOString() })

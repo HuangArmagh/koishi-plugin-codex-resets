@@ -74,6 +74,13 @@ export function makeApi(initial = status()) {
   return { api, state }
 }
 
+// Exercise both API routes when integration tests initialize a real plugin.
+export function apiHttpResponse(url: string, snapshot: StatusResponse) {
+  const body = new URL(url).pathname.endsWith('/status') ? snapshot
+    : { data: [], pagination: { has_more: false, next_cursor: null } }
+  return { status: 200, headers: new Headers(), data: JSON.stringify(body) }
+}
+
 export class MemoryStore implements Store {
   readonly subs = new Map<string, Subscription>()
   readonly deliveries = new Map<string, Delivery>()

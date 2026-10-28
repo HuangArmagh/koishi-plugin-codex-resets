@@ -61,7 +61,7 @@ describe('execution identity deduplicates notifications without changing existin
     await new Monitor(store, api, send, options).poll()
     expect(send).toHaveBeenCalledTimes(1)
     expect(await store.delivery(before.id)).toEqual(before)
-    expect(api.history).toHaveBeenCalledTimes(1)
+    expect(api.history).toHaveBeenCalledTimes(2) // Initialization plus the new execution gap.
   })
 
   it.each(['sent', 'retrying'] as const)('reconciles two legacy delivery rows while retaining the %s row', async outcome => {

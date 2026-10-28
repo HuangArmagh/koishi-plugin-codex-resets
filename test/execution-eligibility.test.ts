@@ -20,15 +20,15 @@ async function setup(type: 'channel' | 'private', reset_type: ResetType = 'regul
   const original = reset({ id: '2114588174249071102', reset_type, announced_at: new Date(NOW + 3000_000).toISOString(), source: { type: 'x_post' } })
   const observed = reset({ ...original, id: `observed-${original.id}`, announced_at: new Date(NOW + 4200_000).toISOString(), source: { type: 'observed' } })
   const newest = reset({ id: '2115273253711409208', announced_at: new Date(NOW + 4800_000).toISOString() })
-  let current = status()
+  let current = status(), historyVisible = false
   const rows = [original, observed, newest], historyFrom: number[] = []
   const api = new CodexApi(async url => {
     const parsed = new URL(url)
     if (parsed.pathname.endsWith('/status')) return { status: 200, headers: new Headers(), body: current }
     const from = Date.parse(parsed.searchParams.get('from')!)
-    historyFrom.push(from)
+    if (historyVisible) historyFrom.push(from) // Inspect the execution update, excluding empty initial checks.
     return { status: 200, headers: new Headers(), body: {
-      data: rows.filter(row => Date.parse(row.announced_at) >= from), pagination: { has_more: false, next_cursor: null },
+      data: historyVisible ? rows.filter(row => Date.parse(row.announced_at) >= from) : [], pagination: { has_more: false, next_cursor: null },
     } }
   }, { clock, signal, cacheMs: 300_000, stateStore: store })
   const send = vi.fn(async (_target: Subscription, _content: string) => {})
@@ -40,7 +40,7 @@ async function setup(type: 'channel' | 'private', reset_type: ResetType = 'regul
   clock.advance(3600_000)
   await monitor.subscribe(destination)
   return { app, store, clock, monitor, api, options, send, original, observed, newest, rows, destination, existing, historyFrom,
-    setCurrent: (latest = newest) => { current = status({ latest_reset: latest }) } }
+    setCurrent: (latest = newest) => { current = status({ latest_reset: latest }); historyVisible = true } }
 }
 
 describe('linked records retain per-subscription execution eligibility', () => {

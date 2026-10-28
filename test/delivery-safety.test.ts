@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { App as KoishiApp } from 'koishi'
 import type { Delivery, Subscription } from '../src/types'
-import { makeApi, makeClock, MemoryStore, NOW, reset, status, target, watch, scheduled } from './helpers'
+import { apiHttpResponse, makeApi, makeClock, MemoryStore, NOW, reset, status, target, watch, scheduled } from './helpers'
 
 const require = createRequire(import.meta.url)
 const { App, h, MessageEncoder, Universal } = require('koishi') as typeof import('koishi')
@@ -162,9 +162,9 @@ describe('announcement identity and Discord output', () => {
     const app = new App()
     app.plugin(Memory)
     const mock = app.plugin(Mock)
-    app.http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(status({
+    app.http = vi.fn(async (url: string) => apiHttpResponse(url, status({
       scheduled_reset: scheduled({ text: longText, source: { type: 'observed', url: longUrl } }),
-    })) })) as unknown as typeof app.http
+    }))) as unknown as typeof app.http
     app.plugin(plugin, { pollIntervalMs: 60_000 })
     const bot = await start(app, mock)
     vi.spyOn(require('../lib/util').clock, 'sleep').mockResolvedValue(undefined)

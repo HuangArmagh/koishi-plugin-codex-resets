@@ -22,7 +22,7 @@ async function setup(type: 'channel' | 'private' = 'private', reset_type: ResetT
   const original = reset({ id: '2114588174249071102', reset_type,
     announced_at: new Date(NOW + 1800_000).toISOString(), source: { type: 'x_post' } })
   let latest: Reset | null = previous
-  const rows: Reset[] = [original]
+  const rows: Reset[] = []
   const requests: { pathname: string; at: number; from: number }[] = []
   let holdHistory = false, historyFailure = 0
   let entered!: () => void, release!: () => void
@@ -52,8 +52,10 @@ async function setup(type: 'channel' | 'private' = 'private', reset_type: ResetT
   const existing = target('existing', 'channel', 'bot-a', 'qq'), destination = target('new', type, 'bot-a', 'qq')
   await runtime.monitor.subscribe(existing)
   await runtime.monitor.poll()
+  requests.length = 0 // Inspect the subsequent overlapping checks.
   clock.advance(3600_000)
   latest = original
+  rows.push(original)
   holdHistory = true
   const polling = runtime.monitor.poll()
   await waiting
@@ -174,7 +176,7 @@ describe('new subscriptions catch up execution evidence saved by an in-flight po
     } finally { await c.app.stop() }
   })
 
-  it('does not fetch history or replay known linked events for a replacement subscription generation', async () => {
+  it('checks history once without replaying known linked events for a replacement subscription generation', async () => {
     const c = await setup()
     try {
       await c.monitor.unsubscribe(c.destination)
@@ -186,7 +188,7 @@ describe('new subscriptions catch up execution evidence saved by an in-flight po
       c.setLatest(c.observed)
       await c.reload().monitor.poll()
       expect(c.newMessages()).toHaveLength(0)
-      expect(c.historyRequests()).toHaveLength(1)
+      expect(c.historyRequests()).toHaveLength(2)
     } finally { await c.app.stop() }
   })
 })

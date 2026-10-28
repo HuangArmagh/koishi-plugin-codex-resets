@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Bot, h as Element } from 'koishi'
-import { NOW, reset, status, watch, scheduled } from './helpers'
+import { apiHttpResponse, NOW, reset, status, watch, scheduled } from './helpers'
 
 const require = createRequire(import.meta.url)
 const { App, h, Universal } = require('koishi') as typeof import('koishi')
@@ -51,7 +51,7 @@ async function sandbox() {
   app.set('server', {})
   const messages: { type: string; body: { content?: string; channel?: string } }[] = []
   const client = { id: 'local-test-console', send: (message: typeof messages[number]) => messages.push(message) }
-  app.http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(status({ scheduled_reset: scheduled() })) })) as unknown as typeof app.http
+  app.http = vi.fn(async (url: string) => apiHttpResponse(url, status({ scheduled_reset: scheduled() }))) as unknown as typeof app.http
   app.plugin(Sandbox, { fileServer: { enabled: false } })
   app.plugin(plugin, { pollIntervalMs: 60_000 })
   cleanups.push(() => app.stop())
@@ -130,7 +130,7 @@ async function telegram() {
   const mock = app.plugin(Mock)
   const oversizedWatch = watch({ forecast_window: '😀<&'.repeat(1800), text: 'forecast body '.repeat(400), source: { type: 'x_post', url: 'https://example.invalid/' + 'a'.repeat(6000) } })
   const oversizedScheduled = scheduled({ text: oversizedWatch.text, source: oversizedWatch.source })
-  app.http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(status({ active_watch: oversizedWatch, scheduled_reset: oversizedScheduled })) })) as unknown as typeof app.http
+  app.http = vi.fn(async (url: string) => apiHttpResponse(url, status({ active_watch: oversizedWatch, scheduled_reset: oversizedScheduled }))) as unknown as typeof app.http
   app.plugin(plugin, { pollIntervalMs: 60_000 })
   await app.start()
   const bot = app.bots[0]!

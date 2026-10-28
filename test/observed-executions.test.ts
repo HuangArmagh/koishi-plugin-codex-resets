@@ -20,7 +20,7 @@ function setup(resetType: ResetType = 'regular', store: Store = new MemoryStore(
     announced_at: new Date(NOW + 30_000).toISOString(), source: { type: 'observed', url: announcement.source.url } })
   const next = scheduled({ id: '2115273253711409208', announced_at: new Date(NOW + 60_000).toISOString() })
   const { api, state } = makeApi(status({ scheduled_reset: announcement }))
-  api.history.mockResolvedValue({ data: [executed], pagination: { has_more: false, next_cursor: null } })
+  api.history.mockImplementation(async () => ({ data: clock.now() >= Date.parse(executed.announced_at) ? [executed] : [], pagination: { has_more: false, next_cursor: null } }))
   const send = vi.fn(async (_destination: Subscription, _content: string) => {})
   const options = { clock, signal: new AbortController().signal, sendDelayMs: 1000, report: vi.fn() }
   const monitor = new Monitor(store, api, send, options)
@@ -35,6 +35,7 @@ describe('observed executions resolve their original announcements', () => {
     const destination = target('destination', type, 'bot-a', 'qq')
     await monitor.subscribe(destination)
     await monitor.poll()
+    api.history.mockClear() // Count subsequent gap checks separately from initialization.
     clock.advance(60_000)
     state.current = status({ latest_reset: executed })
     await monitor.poll()
@@ -53,6 +54,7 @@ describe('observed executions resolve their original announcements', () => {
     const destination = target('destination', type)
     await monitor.subscribe(destination)
     await monitor.poll()
+    api.history.mockClear() // Count subsequent gap checks separately from initialization.
     clock.advance(60_000)
     const subscription = (await store.subscription(destination.id))!
     // Model 0.5.4: execution delivered and checkpoint advanced, original pending ID retained.
@@ -87,6 +89,7 @@ describe('observed executions resolve their original announcements', () => {
     const { monitor, api, state, store, clock, send, executed, next } = setup()
     await monitor.subscribe(target())
     await monitor.poll()
+    api.history.mockClear() // Count subsequent gap checks separately from initialization.
     const checkpoint = await store.checkpoint()
     clock.advance(60_000)
     state.current = status({ latest_reset: executed, scheduled_reset: next })
@@ -107,6 +110,7 @@ describe('observed executions resolve their original announcements', () => {
     const { monitor, api, state, store, clock, send, announcement, executed, next } = setup()
     await monitor.subscribe(target())
     await monitor.poll()
+    api.history.mockClear() // Count subsequent gap checks separately from initialization.
     clock.advance(60_000)
     executed.announced_at = announcement.announced_at
     const newest = reset({ id: 'newer-execution', announced_at: new Date(NOW + 50_000).toISOString() })
@@ -133,6 +137,7 @@ describe('observed executions resolve their original announcements', () => {
     const { monitor, api, state, store, clock, announcement, executed } = setup()
     await monitor.subscribe(target())
     await monitor.poll()
+    api.history.mockClear() // Count subsequent gap checks separately from initialization.
     clock.advance(60_000)
     const other = { ...executed, ...overrides }
     state.current = status({ latest_reset: other })
@@ -146,6 +151,7 @@ describe('observed executions resolve their original announcements', () => {
     const { monitor, api, state, store, clock, send, options, announcement, executed } = setup()
     await monitor.subscribe(target())
     await monitor.poll()
+    api.history.mockClear() // Count subsequent gap checks separately from initialization.
     const checkpoint = await store.checkpoint()
     clock.advance(60_000)
     state.current = status({ latest_reset: executed })
@@ -167,6 +173,7 @@ describe('observed executions resolve their original announcements', () => {
     state.current = status({ latest_reset: baseline === 'snapshot' ? reset({ ...announcement }) : reset() })
     await monitor.subscribe(target())
     await monitor.poll()
+    api.history.mockClear() // Count subsequent gap checks separately from initialization.
     clock.advance(60_000)
     state.current = status({ latest_reset: executed })
     await monitor.poll()
@@ -198,7 +205,7 @@ describe('observed executions resolve their original announcements', () => {
       await restarted.unsubscribe(target())
       await restarted.subscribe(target())
       state.current = status({ latest_reset: reset(), scheduled_reset: announcement })
-      api.history.mockResolvedValue({ data: [executed], pagination: { has_more: false, next_cursor: null } })
+      api.history.mockImplementation(async () => ({ data: clock.now() >= Date.parse(executed.announced_at) ? [executed] : [], pagination: { has_more: false, next_cursor: null } }))
       send.mockClear()
       await restarted.poll()
       expect(send).not.toHaveBeenCalled()

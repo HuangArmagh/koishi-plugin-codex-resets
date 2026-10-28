@@ -129,18 +129,11 @@ export class Monitor {
     let historyComplete = true
 
     const earliestSubscription = Math.min(...initialSubscriptions.map(subscription => subscription.subscribedAt))
-    // Another poll may save executions after registration without processing this
-    // generation. Its checkpoint (and latest's older announcement time) cannot
-    // establish this subscription's baseline. Compare durable evidence with the
-    // registration snapshot, including non-latest events and same-millisecond writes.
-    const knownExecutionKeys = newSubscriptions.length
-      ? [...new Set((await this.store.executionKeys()).map(key => identity.key(key)))] : []
-    const needsInitialCatchup = (latest && ((!checkpoint && Date.parse(latest.announced_at) >= earliestSubscription)
-      || newSubscriptions.some(subscription => Date.parse(latest.announced_at) >= subscription.subscribedAt)))
-      || newSubscriptions.some(subscription => {
-        const baseline = new Set((subscription.baselineExecutionKeys ?? []).map(key => identity.key(key)))
-        return knownExecutionKeys.some(key => !baseline.has(key))
-      })
+    // Latest may retain an old announcement time or be absent while history has
+    // newer observations. Every new generation must finish its own catch-up,
+    // including after a failed first status request or another poll's checkpoint.
+    const needsInitialCatchup = newSubscriptions.length > 0
+      || (!checkpoint && latest && Date.parse(latest.announced_at) >= earliestSubscription)
     const unconfirmed = pendingResets.filter(pending => !latestKeys.has(pending.key))
     const unresolved = unconfirmed.filter(pending => !activeScheduled || pending.key !== pendingResetKey)
     if (needsInitialCatchup || unresolved.length || (latest && checkpoint
@@ -206,6 +199,19 @@ export class Monitor {
           subscription.baselined = historyComplete
           subscription.baselineResetKey = latest && latestGroup?.every(reset => Date.parse(reset.announced_at) < subscription.subscribedAt)
             && !identity.includes(pendingKeys, resetKey(latest)) ? resetKey(latest) : ''
+          if (historyComplete) {
+            // Persist every event excluded by initialization, not just latest:
+            // an upstream rollback must not turn skipped old history into a notification.
+            // Wait for all pages before excluding a group; a later alias may be eligible.
+            for (const group of groups) {
+              const key = resetKey(group[0]!)
+              if (group.every(reset => Date.parse(reset.announced_at) < subscription.subscribedAt)
+                && !identity.includes(pendingKeys, key)) {
+                for (const alias of identity.keys(key)) baselineExecutions.add(alias)
+              }
+            }
+            subscription.baselineExecutionKeys = [...baselineExecutions]
+          }
           subscriptionChanged = true
         }
         const eligible = groups.flatMap(group => {

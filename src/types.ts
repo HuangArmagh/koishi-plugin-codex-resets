@@ -65,7 +65,7 @@ export interface Subscription extends Target {
   subscribedAt: number
   baselined: boolean
   baselineResetKey: string
-  /** Executions already known when this subscription generation was registered. */
+  /** Executions known at registration or excluded by a complete initial history check. */
   baselineExecutionKeys?: string[] | null
   pendingResets?: { key: string; announcedAt: string }[]
 }

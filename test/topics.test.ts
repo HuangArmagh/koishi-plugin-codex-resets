@@ -2,7 +2,7 @@ import { createRequire } from 'node:module'
 import type { App as KoishiApp, Session } from 'koishi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Delivery, Subscription } from '../src/types'
-import { makeApi, makeClock, NOW, reset, status, scheduled } from './helpers'
+import { apiHttpResponse, makeApi, makeClock, NOW, reset, status, scheduled } from './helpers'
 
 const require = createRequire(import.meta.url)
 const { App, MessageEncoder, Universal } = require('koishi') as typeof import('koishi')
@@ -209,7 +209,7 @@ describe('Telegram topic subscriptions', () => {
     const app = new App({ prefix: '!' })
     app.plugin(Memory)
     const mock = app.plugin(Mock)
-    const http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(status({ scheduled_reset: scheduled() })) }))
+    const http = vi.fn(async (url: string) => apiHttpResponse(url, status({ scheduled_reset: scheduled() })))
     app.http = http as unknown as typeof app.http
     app.plugin(plugin, { pollIntervalMs: 60_000 })
     const bot = await start(app, mock)
@@ -241,7 +241,7 @@ describe('Telegram topic subscriptions', () => {
       })
     }
     await vi.advanceTimersByTimeAsync(15_000)
-    expect(http).toHaveBeenCalledTimes(1)
+    expect(http).toHaveBeenCalledTimes(2)
     expect(routes).toHaveLength(8)
     for (const [guild, topic] of [[groupA, 42], [groupB, 42], [groupA, 43], [groupB, undefined]] as const) {
       const matching = routes.filter(route => route.chat_id === guild && route.message_thread_id === topic)

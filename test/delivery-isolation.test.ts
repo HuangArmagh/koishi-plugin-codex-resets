@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { NOW, reset, scheduled, status, target, enqueueResetFixtures, MemoryStore, makeClock, makeApi } from './helpers'
+import { apiHttpResponse, NOW, reset, scheduled, status, target, enqueueResetFixtures, MemoryStore, makeClock, makeApi } from './helpers'
 import { CodexApi } from '../src/api'
 import { Monitor } from '../src/monitor'
 import type { Subscription } from '../src/types'
@@ -29,7 +29,7 @@ describe('delivery isolation and history backoff', () => {
     const app = new App()
     app.plugin(Memory)
     const mock = app.plugin(Mock)
-    const http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(status()) }))
+    const http = vi.fn(async (url: string) => apiHttpResponse(url, status()))
     app.http = http as unknown as typeof app.http
     app.plugin(plugin, { pollIntervalMs: 60_000 })
     let release!: () => void
@@ -69,13 +69,13 @@ describe('delivery isolation and history backoff', () => {
     const store = new MemoryStore(), clock = makeClock()
     const signal = new AbortController().signal
     let current = status({ scheduled_reset: scheduled() })
-    let limited = true
+    let limited = false, executed = false
     const requests: string[] = []
     const api = new CodexApi(async (url: string) => {
       requests.push(url)
       return url.includes('/resets?')
         ? limited ? { status: 429, headers: new Headers({ 'Retry-After': '600' }), body: {} }
-          : { status: 200, headers: new Headers(), body: { data: outcome === 'executed' ? [reset({ ...scheduled() })] : [], pagination: { has_more: false, next_cursor: null } } }
+          : { status: 200, headers: new Headers(), body: { data: executed ? [reset({ ...scheduled() })] : [], pagination: { has_more: false, next_cursor: null } } }
         : { status: 200, headers: new Headers(), body: structuredClone(current) }
     }, { cacheMs: 60_000, signal, clock, stateStore: store })
     const send = vi.fn(async (_destination: unknown, _content: string) => {})
@@ -84,11 +84,12 @@ describe('delivery isolation and history backoff', () => {
     await monitor.subscribe(target())
     await monitor.poll()
     expect(send).toHaveBeenCalledTimes(1)
+    limited = true
     clock.advance(60_000)
     current = status({ latest_reset: reset({ id: 'newer', announced_at: new Date(NOW + 30_000).toISOString() }), scheduled_reset: scheduled() })
     await monitor.poll()
     expect(api.retryAt).toBeGreaterThan(clock.now())
-    expect(requests.filter(url => url.includes('/resets?'))).toHaveLength(1)
+    expect(requests.filter(url => url.includes('/resets?'))).toHaveLength(2)
     const titles = send.mock.calls.map(([, content]) => content.split('\n')[0])
     expect(titles.filter(title => title === '【Codex 重置预告】')).toHaveLength(1)
     expect(titles.filter(title => title === '【Codex 已执行重置】')).toHaveLength(1)
@@ -100,6 +101,7 @@ describe('delivery isolation and history backoff', () => {
     expect(send).toHaveBeenCalledTimes(2)
     expect(requests).toHaveLength(requestCount)
     limited = false
+    executed = outcome === 'executed'
     clock.advance(600_000)
     if (outcome === 'withdrawn') current.data.scheduled_reset = null
     await monitor.poll()

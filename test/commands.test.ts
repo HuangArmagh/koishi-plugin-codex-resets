@@ -7,7 +7,7 @@ import { ApiError, CodexApi } from '../src/api'
 import type { Transport } from '../src/api'
 import type { StatusResponse } from '../src/types'
 import { defineModels, KoishiStore } from '../src/store'
-import { configureOneBotMock, enqueueResetFixtures, makeApi, makeClock, NOW, reset, status, target, scheduled } from './helpers'
+import { apiHttpResponse, configureOneBotMock, enqueueResetFixtures, makeApi, makeClock, NOW, reset, status, target, scheduled } from './helpers'
 
 // Exercise the emitted CommonJS entry point, matching how Koishi loads this package.
 const require = createRequire(import.meta.url)
@@ -57,11 +57,12 @@ async function setup(config = defaults) {
 describe('Koishi commands and database integration', () => {
   it('replies once per subscription/cancellation and never sends legacy or new diagnostic messages', async () => {
     vi.useFakeTimers({ now: NOW })
+    vi.spyOn(require('../lib/util').clock, 'sleep').mockImplementation(ms => new Promise(resolve => setTimeout(resolve, ms)))
     const app = new App({ prefix: '' })
     apps.push(app)
     try {
       app.plugin(Memory); app.plugin(Mock)
-      const http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(status()) }))
+      const http = vi.fn(async (url: string) => apiHttpResponse(url, status()))
       app.http = http as unknown as typeof app.http
       app.plugin(plugin, { pollIntervalMs: 60_000 })
       await app.start()
@@ -83,14 +84,14 @@ describe('Koishi commands and database integration', () => {
       await store.enqueue({ id: 'upgrade-legacy-test', subscriptionId: subscription.id, generation: subscription.generation,
         eventKey: 'test:legacy:reset', kind: 'reset', content: 'legacy diagnostic', payload: { type: 'test', kind: 'reset', at: NOW },
         createdAt: NOW, expiresAt: NOW + 300_000, retryAt: 0, attempts: 0, sentAt: 0 })
-      await vi.advanceTimersByTimeAsync(1000)
-      expect(http).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(http).toHaveBeenCalledTimes(2)
       expect(pushes).not.toHaveBeenCalled()
       expect(await app.database.get('codex_reset_delivery', {})).toHaveLength(0)
       expect(await group.receive('重置订阅关闭')).toEqual(['取消成功，已停止当前会话的重置推送。'])
       expect(await direct.receive('reset-unsubscribe')).toEqual(['Cancellation successful. Reset notifications for this conversation have stopped.'])
       await vi.advanceTimersByTimeAsync(60_000)
-      expect(http).toHaveBeenCalledTimes(1)
+      expect(http).toHaveBeenCalledTimes(2)
       expect(pushes).not.toHaveBeenCalled()
     } finally {
       await app.stop()
@@ -346,13 +347,14 @@ describe('Koishi commands and database integration', () => {
 
   it('refreshes the API before retrying announcements in the full polling cycle', async () => {
     vi.useFakeTimers({ now: NOW })
+    vi.spyOn(require('../lib/util').clock, 'sleep').mockImplementation(ms => new Promise(resolve => setTimeout(resolve, ms)))
     const app = new App({ prefix: '' })
     apps.push(app)
     try {
       app.plugin(Memory)
       app.plugin(Mock)
       let snapshot = status({ scheduled_reset: scheduled() })
-      const http = vi.fn(async () => ({ status: 200, headers: new Headers(), data: JSON.stringify(snapshot) }))
+      const http = vi.fn(async (url: string) => apiHttpResponse(url, snapshot))
       app.http = http as unknown as typeof app.http
       app.plugin(plugin, { pollIntervalMs: 60_000 })
       await app.start()
@@ -364,12 +366,12 @@ describe('Koishi commands and database integration', () => {
       })
       const activeSend = vi.spyOn(app.bots[0]!, 'sendMessage')
         .mockRejectedValueOnce(new Error('bot offline')).mockResolvedValue(['message-id'])
-      await vi.advanceTimersByTimeAsync(60_000)
+      await vi.advanceTimersByTimeAsync(65_000)
       expect(activeSend).toHaveBeenCalledTimes(1)
       expect(await app.database.get('codex_reset_delivery', { sentAt: 0 })).toHaveLength(1)
       snapshot = status({ scheduled_reset: null })
       await vi.advanceTimersByTimeAsync(60_000)
-      expect(http).toHaveBeenCalledTimes(2)
+      expect(http).toHaveBeenCalledTimes(3)
       expect(activeSend).toHaveBeenCalledTimes(1)
       expect(await app.database.get('codex_reset_delivery', { sentAt: 0 })).toHaveLength(0)
     } finally {
