@@ -1,21 +1,10 @@
 import { randomUUID } from 'node:crypto'
+import { ExecutionIdentity, executionLink, resetKey } from './execution'
+export { resetKey } from './execution'
 import { formatNotification, formatReset, formatScheduled } from './format'
 import { parseLocale, type LanguageSetting, type Locale } from './locales'
 import type { Api, Clock, Delivery, Notification, Reset, ScheduledReset, Store, Subscription, Target } from './types'
 import { clock as systemClock, hash, Serial } from './util'
-
-export function resetKey(reset: Reset): string {
-  return `reset:${reset.reset_type}:${reset.id}`
-}
-
-function executionKeys(reset: Reset): string[] {
-  const keys = [resetKey(reset)]
-  // Observed executions can refer back to the numeric announcement ID. Keep the
-  // original delivery key: changing it would replay notifications after an upgrade.
-  const observed = reset.source.type === 'observed' && /^observed-([0-9]+)$/.exec(reset.id)
-  if (observed) keys.push(`reset:${reset.reset_type}:${observed[1]}`)
-  return keys
-}
 
 export function scheduledKey(reset: ScheduledReset): string {
   return `scheduled:${reset.reset_type}:${reset.id}`
@@ -109,7 +98,9 @@ export class Monitor {
     this.options.signal.throwIfAborted()
     const latest = status.data.latest_reset
     const scheduled = status.data.scheduled_reset
-    const latestKeys = new Set(latest ? executionKeys(latest) : [])
+    const identity = new ExecutionIdentity(await this.store.executionLinks())
+    if (latest) identity.observe(latest)
+    const latestKeys = new Set(latest ? identity.keys(resetKey(latest)) : [])
     const pendingResetKey = scheduled ? resetKey(scheduled) : null
     const activeScheduled = scheduled && !latestKeys.has(pendingResetKey!)
       && !await this.store.hasExecution(pendingResetKey!)
@@ -121,8 +112,12 @@ export class Monitor {
       const subscriptions = (await this.store.subscriptions())
         .filter(subscription => initialGenerations.get(subscription.id) === subscription.generation)
       for (const subscription of subscriptions) {
+        let changed = await this.recoverPending(subscription, identity)
         if (activeScheduled && scheduled && pendingResetKey && !(subscription.pendingResets ?? []).some(pending => pending.key === pendingResetKey)) {
           subscription.pendingResets = [...(subscription.pendingResets ?? []), { key: pendingResetKey, announcedAt: scheduled.announced_at }]
+          changed = true
+        }
+        if (changed) {
           // Persist observations before history requests, so failures and reloads cannot erase them.
           await this.store.saveSubscription(subscription)
         }
@@ -138,7 +133,8 @@ export class Monitor {
       || newSubscriptions.some(subscription => Date.parse(latest.announced_at) >= subscription.subscribedAt))
     const unconfirmed = pendingResets.filter(pending => !latestKeys.has(pending.key))
     const unresolved = unconfirmed.filter(pending => !activeScheduled || pending.key !== pendingResetKey)
-    if (unresolved.length || (latest && (needsInitialCatchup || (checkpoint && checkpoint.latestResetKey !== resetKey(latest))))) {
+    if (unresolved.length || (latest && (needsInitialCatchup || (checkpoint
+      && (!checkpoint.latestResetKey || identity.key(checkpoint.latestResetKey) !== identity.key(resetKey(latest))))))) {
       const previousTime = checkpoint?.latestResetAt ? Date.parse(checkpoint.latestResetAt) : checkpoint?.checkedAt ?? earliestSubscription
       const from = new Date(Math.min(
         Math.max(previousTime, earliestSubscription),
@@ -172,11 +168,21 @@ export class Monitor {
     await this.mutations.run(async () => {
       this.options.signal.throwIfAborted()
       const subscriptions = await this.store.subscriptions()
-      const ordered = [...resets.values()].sort((left, right) => Date.parse(left.announced_at) - Date.parse(right.announced_at))
-      const confirmedKeys = new Set(ordered.flatMap(executionKeys))
+      for (const reset of resets.values()) identity.observe(reset)
+      const confirmedKeys = new Set([...resets.values()].flatMap(reset => identity.keys(resetKey(reset))))
+      // Prefer the status record (inserted first) when both IDs describe one event.
+      const unique = new Map<string, Reset>()
+      for (const reset of resets.values()) {
+        const key = identity.key(resetKey(reset))
+        if (!unique.has(key)) unique.set(key, reset)
+      }
+      const ordered = [...unique.values()].sort((left, right) => Date.parse(left.announced_at) - Date.parse(right.announced_at))
       // Evidence is global and outlives subscriptions, notification queues and checkpoints.
       // Persist it before allowing announcements or committing catch-up progress.
-      await this.store.saveExecutions([...confirmedKeys])
+      await this.store.saveExecutions([...confirmedKeys], [...resets.values()].flatMap(reset => {
+        const link = executionLink(reset)
+        return link ? [link] : []
+      }))
       // Execution evidence wins if status/history temporarily contain the same announcement.
       if (pendingResetKey && confirmedKeys.has(pendingResetKey)) {
         await this.store.cancelScheduledExcept(null)
@@ -195,18 +201,22 @@ export class Monitor {
           // A global checkpoint may already be ahead of this subscription; keep its initial catch-up retryable.
           subscription.baselined = historyComplete
           subscription.baselineResetKey = latest && Date.parse(latest.announced_at) < subscription.subscribedAt
-            && ![...latestKeys].some(key => pendingKeys.has(key)) ? resetKey(latest) : ''
+            && !identity.includes(pendingKeys, resetKey(latest)) ? resetKey(latest) : ''
           subscriptionChanged = true
         }
         for (const reset of ordered) {
           const key = resetKey(reset)
-          const keys = executionKeys(reset)
-          if (keys.some(key => key === subscription.baselineResetKey || baselineExecutions.has(key))) continue
+          const keys = identity.keys(key)
+          if (identity.includes([subscription.baselineResetKey, ...baselineExecutions], key)) continue
           // Execution may be observed after subscription while retaining an older announcement time.
           if (Date.parse(reset.announced_at) < subscription.subscribedAt
-            && !keys.some(key => pendingKeys.has(key))
+            && !identity.includes(pendingKeys, key)
             && (!wasBaselined || !latest || key !== resetKey(latest))) continue
-          await this.enqueue(subscription, key, 'reset', formatReset(reset, this.localeFor(subscription), subscription.platform), 0, { type: 'reset', reset })
+          // Keep the existing row, including its original ID, retries and unknown
+          // send outcome, instead of creating another row for the linked ID.
+          if (!(await this.store.executionDeliveries(subscription.id, subscription.generation, keys)).length) {
+            await this.enqueue(subscription, key, 'reset', formatReset(reset, this.localeFor(subscription), subscription.platform), 0, { type: 'reset', reset })
+          }
         }
         if (this.activeScheduled) {
           await this.enqueue(subscription, this.activeScheduled.key, 'scheduled', formatScheduled(this.activeScheduled.value, this.localeFor(subscription), subscription.platform), 0, { type: 'scheduled', scheduled: this.activeScheduled.value })
@@ -225,6 +235,22 @@ export class Monitor {
       })
     })
     await this.drain()
+  }
+
+  private async recoverPending(subscription: Subscription, identity: ExecutionIdentity): Promise<boolean> {
+    const remaining = []
+    for (const pending of subscription.pendingResets ?? []) {
+      const excluded = identity.includes([subscription.baselineResetKey, ...(subscription.baselineExecutionKeys ?? [])], pending.key)
+      // Global execution evidence alone cannot prove this subscription's delivery
+      // was saved. Leave it retryable after an interrupted enqueue or for another generation.
+      const deliveries = excluded ? [] : await this.store.executionDeliveries(
+        subscription.id, subscription.generation, identity.keys(pending.key),
+      )
+      if (!excluded && !deliveries.length) remaining.push(pending)
+    }
+    if (remaining.length === (subscription.pendingResets ?? []).length) return false
+    subscription.pendingResets = remaining
+    return true
   }
 
   private async enqueue(subscription: Subscription, eventKey: string, kind: Delivery['kind'], content: string, expiresAt: number, payload: Notification): Promise<void> {
@@ -315,6 +341,18 @@ export class Monitor {
     if (!subscription || subscription.generation !== delivery.generation) {
       await this.store.deleteDelivery(id)
       return
+    }
+    if (delivery.kind === 'reset') {
+      const identity = new ExecutionIdentity(await this.store.executionLinks())
+      const candidates = await this.store.executionDeliveries(subscription.id, subscription.generation, identity.keys(delivery.eventKey))
+      // Reconcile duplicates already queued by old versions before submitting any
+      // further attempt. Preserve a sent row, otherwise the earliest original row.
+      const preferred = candidates.sort((left, right) => Number(Boolean(right.sentAt)) - Number(Boolean(left.sentAt))
+        || left.createdAt - right.createdAt || left.id.localeCompare(right.id))[0]
+      if (preferred && preferred.id !== delivery.id) {
+        await this.store.deleteDelivery(delivery.id)
+        return
+      }
     }
     this.options.signal.throwIfAborted()
     const locale = this.localeFor(subscription)

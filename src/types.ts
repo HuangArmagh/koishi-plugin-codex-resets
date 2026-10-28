@@ -76,6 +76,11 @@ export interface Checkpoint {
   checkedAt: number
 }
 
+export interface ExecutionLink {
+  observedKey: string
+  originalKey: string
+}
+
 export interface Delivery {
   id: string
   subscriptionId: string
@@ -125,12 +130,14 @@ export interface Store extends ApiStateStore {
   enqueue(delivery: Delivery): Promise<void>
   pending(now: number): Promise<Delivery[]>
   delivery(id: string): Promise<Delivery | undefined>
+  executionDeliveries(subscriptionId: string, generation: string, eventKeys: string[]): Promise<Delivery[]>
   updateDelivery(id: string, changes: Partial<Delivery>): Promise<void>
   deleteDelivery(id: string): Promise<void>
   cancelScheduledExcept(activeKey: string | null): Promise<void>
   hasExecution(eventKey: string): Promise<boolean>
   executionKeys(): Promise<string[]>
-  saveExecutions(eventKeys: string[]): Promise<void>
+  executionLinks(): Promise<ExecutionLink[]>
+  saveExecutions(eventKeys: string[], links?: ExecutionLink[]): Promise<void>
 }
 
 export interface Api {

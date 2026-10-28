@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
-import type { Api, ApiRequestState, Checkpoint, Clock, Delivery, Reset, ScheduledReset, StatusResponse, Store, Subscription, Target, Watch } from '../src/types'
+import type { Api, ApiRequestState, Checkpoint, Clock, Delivery, ExecutionLink, Reset, ScheduledReset, StatusResponse, Store, Subscription, Target, Watch } from '../src/types'
+import { isExecutionDelivery } from '../src/execution'
 import { hash } from '../src/util'
 import type { App } from 'koishi'
 
@@ -77,6 +78,7 @@ export class MemoryStore implements Store {
   readonly subs = new Map<string, Subscription>()
   readonly deliveries = new Map<string, Delivery>()
   readonly executions = new Set<string>()
+  readonly links = new Map<string, ExecutionLink>()
   state: Checkpoint | null = null
   requestState: ApiRequestState | null = null
 
@@ -98,6 +100,10 @@ export class MemoryStore implements Store {
   }
   async pending(now: number) { return structuredClone([...this.deliveries.values()].filter(value => !value.sentAt && value.retryAt <= now)) }
   async delivery(id: string) { return structuredClone(this.deliveries.get(id)) }
+  async executionDeliveries(subscriptionId: string, generation: string, eventKeys: string[]) {
+    return structuredClone([...this.deliveries.values()].filter(value => value.subscriptionId === subscriptionId
+      && value.generation === generation && eventKeys.includes(value.eventKey) && isExecutionDelivery(value)))
+  }
   async updateDelivery(id: string, changes: Partial<Delivery>) {
     const value = this.deliveries.get(id)
     if (value) Object.assign(value, changes)
@@ -112,7 +118,15 @@ export class MemoryStore implements Store {
   async saveApiState(value: ApiRequestState) { this.requestState = structuredClone(value) }
   async hasExecution(key: string) { return this.executions.has(key) }
   async executionKeys() { return [...this.executions] }
-  async saveExecutions(keys: string[]) { for (const key of keys) this.executions.add(key) }
+  async executionLinks() { return structuredClone([...this.links.values()]) }
+  async saveExecutions(keys: string[], links: ExecutionLink[] = []) {
+    for (const key of keys) this.executions.add(key)
+    for (const link of links) {
+      this.links.set(link.observedKey, structuredClone(link))
+      this.executions.add(link.observedKey)
+      this.executions.add(link.originalKey)
+    }
+  }
 }
 
 let fixtureId = 0

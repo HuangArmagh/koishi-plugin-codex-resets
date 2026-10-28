@@ -170,7 +170,7 @@ describe('observed executions resolve their original announcements', () => {
     clock.advance(60_000)
     state.current = status({ latest_reset: executed })
     await monitor.poll()
-    expect(api.history).toHaveBeenCalledTimes(1)
+    expect(api.history).toHaveBeenCalledTimes(baseline === 'snapshot' ? 0 : 1)
     expect(send).not.toHaveBeenCalled()
   })
 

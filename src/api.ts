@@ -42,6 +42,8 @@ function reset(value: unknown): value is Reset {
     && date(value.announced_at) && typeof value.text === 'string' && source(value.source)
 }
 
+export { reset as isReset }
+
 function watch(value: unknown): value is Watch {
   return object(value) && typeof value.level === 'string' && ['elevated', 'strong'].includes(value.level)
     && (value.reset_chance_percent === null || (typeof value.reset_chance_percent === 'number'

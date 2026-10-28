@@ -1,5 +1,7 @@
 import type { Context } from 'koishi'
-import type { ApiRequestState, Checkpoint, Delivery, Store, Subscription } from './types'
+import { isReset } from './api'
+import { executionLink, isExecutionDelivery, resetKey } from './execution'
+import type { ApiRequestState, Checkpoint, Delivery, ExecutionLink, Store, Subscription } from './types'
 import { hash, targetKey } from './util'
 
 interface StateRow {
@@ -13,7 +15,7 @@ declare module 'koishi' {
     codex_reset_delivery: Delivery
     codex_reset_state: StateRow
     codex_reset_api_state: ApiRequestState & { id: string }
-    codex_reset_execution: { id: string; eventKey: string }
+    codex_reset_execution: { id: string; eventKey: string; originalKey: string }
   }
 }
 
@@ -38,7 +40,7 @@ export function defineModels(ctx: Context): void {
     requestPending: { type: 'boolean', initial: false },
   }, { primary: 'id' })
   ctx.model.extend('codex_reset_execution', {
-    id: 'string', eventKey: 'string',
+    id: 'string', eventKey: 'string', originalKey: { type: 'string', initial: '' },
   }, { primary: 'id' })
 }
 
@@ -63,14 +65,25 @@ export class KoishiStore implements Store {
     const subscriptions = await database.get('codex_reset_subscription', {})
     const checkpoint = await this.checkpoint()
     const keys = [
-      ...deliveries.filter(row => !row.payload || row.payload.type === 'reset').map(row => row.eventKey),
+      ...deliveries.filter(isExecutionDelivery).map(row => row.eventKey),
       ...subscriptions.map(row => row.baselineResetKey), checkpoint?.latestResetKey ?? '',
     ].filter(key => /^reset:(regular|banked):./.test(key))
-    await this.writeExecutions(keys)
+    const links = deliveries.filter(isExecutionDelivery).flatMap(row => {
+      const reset = row.payload?.reset
+      // Do not turn malformed or mismatched legacy payloads into execution aliases.
+      const link = isReset(reset) && resetKey(reset) === row.eventKey ? executionLink(reset) : undefined
+      return link ? [link] : []
+    })
+    await this.writeExecutions(keys, links)
   }
 
-  private async writeExecutions(eventKeys: string[]): Promise<void> {
-    const values = [...new Set(eventKeys)].map(eventKey => ({ id: hash([eventKey]), eventKey }))
+  private async writeExecutions(eventKeys: string[], links: ExecutionLink[] = []): Promise<void> {
+    const originals = new Map(links.map(link => [link.observedKey, link.originalKey]))
+    const keys = [...eventKeys, ...links.flatMap(link => [link.observedKey, link.originalKey])]
+    const values = [...new Set(keys)].map(eventKey => ({ id: hash([eventKey]), eventKey,
+      // Omit this field on ordinary writes so an existing link survives later snapshots.
+      ...(originals.has(eventKey) ? { originalKey: originals.get(eventKey)! } : {}),
+    }))
     if (values.length) await this.ctx.database.upsert('codex_reset_execution', values)
   }
 
@@ -104,9 +117,15 @@ export class KoishiStore implements Store {
     return Boolean((await this.ctx.database.get('codex_reset_execution', { id: hash([eventKey]) })).length)
   }
 
-  async saveExecutions(eventKeys: string[]): Promise<void> {
+  async executionLinks(): Promise<ExecutionLink[]> {
     await this.prepare()
-    await this.writeExecutions(eventKeys)
+    return (await this.ctx.database.get('codex_reset_execution', { originalKey: { $ne: '' } }))
+      .map(row => ({ observedKey: row.eventKey, originalKey: row.originalKey }))
+  }
+
+  async saveExecutions(eventKeys: string[], links: ExecutionLink[] = []): Promise<void> {
+    await this.prepare()
+    await this.writeExecutions(eventKeys, links)
   }
 
   private async discardWatches(): Promise<void> {
@@ -198,6 +217,13 @@ export class KoishiStore implements Store {
   async delivery(id: string): Promise<Delivery | undefined> {
     await this.prepare()
     return (await this.ctx.database.get('codex_reset_delivery', { id }))[0]
+  }
+
+  async executionDeliveries(subscriptionId: string, generation: string, eventKeys: string[]): Promise<Delivery[]> {
+    await this.prepare()
+    return (await this.ctx.database.get('codex_reset_delivery', {
+      subscriptionId, generation, kind: 'reset', eventKey: { $in: eventKeys },
+    })).filter(isExecutionDelivery)
   }
 
   async deleteDelivery(id: string): Promise<void> {
